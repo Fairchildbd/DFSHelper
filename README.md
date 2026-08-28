@@ -217,14 +217,30 @@ npm run db:matchups            # materialize the weekly matchup grades
 Order matters here — matchups consume the composite scores that the ranking
 pass produces, so `rank` has to have run first.
 
-The lineup screen additionally needs a DraftKings slate, which cannot be
-downloaded: export `DKSalaries.csv` from the contest lobby's draft screen and
-import it. Use an absolute path, since the script runs with `packages/server`
-as its working directory:
+The lineup screen additionally needs a DraftKings slate. Unlike every other
+input, a slate cannot be fetched: it is exported by hand from the contest
+lobby's draft screen, and the lobby only ever offers the current week, so a past
+slate becomes unobtainable once its contests close. Two are committed in
+`packages/server/slates/` for that reason — a 12-game classic slate and a
+NE@SEA showdown — so a fresh clone reaches the lineup screen without needing a
+DraftKings account:
 
 ```bash
-npm run ingest:dk -w @dfs/server -- --file /absolute/path/to/DKSalaries.csv
+npm run ingest:dk -w @dfs/server -- --file "$PWD/packages/server/slates/2026-09-13-classic.csv"
+npm run ingest:dk -w @dfs/server -- --file "$PWD/packages/server/slates/2026-09-09-showdown-ne-sea.csv"
 ```
+
+The path has to be absolute, since the script runs with `packages/server` as its
+working directory. Season, week, and contest type are all read off the export —
+the importer matches its `Game Info` teams and dates against the `games` table,
+so `db:ingest:matchups` needs to have loaded that week's schedule first. When
+that lookup finds nothing it says so, and `--season 2026 --week 1` overrides it.
+
+To add your own week, export `DKSalaries.csv`, drop it in the same directory,
+and rename it for the slate it holds — DK names every export the same thing.
+Committing it keeps that week reproducible after the lobby drops it.
+Re-importing is safe: a slate replaces any previous rows for the same season,
+week, and contest rather than adding to them.
 
 ### 5. Run it
 
