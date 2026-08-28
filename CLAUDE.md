@@ -1,6 +1,9 @@
 # CLAUDE.md
 
-React Native performance rules for `packages/app`. Distilled from the official docs —
+Two sets of rules: **TypeScript**, which applies across the monorepo, and **React
+Native performance**, which applies to `packages/app`.
+
+The React Native half is distilled from the official docs —
 [Performance](https://reactnative.dev/docs/performance),
 [Optimizing FlatList](https://reactnative.dev/docs/optimizing-flatlist-configuration),
 [Optimizing JS loading](https://reactnative.dev/docs/optimizing-javascript-loading),
@@ -10,6 +13,76 @@ app actually does.
 
 The type-scale rule (`getPixels` on every `fontSize`/`lineHeight`) lives in
 `packages/app/AGENTS.md` and is not repeated here.
+
+## TypeScript
+
+Applies to the whole monorepo. From the handbook's
+[declaration do's and don'ts](https://www.typescriptlang.org/docs/handbook/declaration-files/do-s-and-don-ts.html).
+All three packages compile `strict: true`, and `packages/shared` also sets
+`declaration: true` — its `.d.ts` output is the surface `server` and `app` compile
+against, so these rules apply to it literally rather than by analogy.
+
+**As of this commit the codebase violates none of them**: no `any`, no boxed types,
+no `@ts-ignore`, across 44 files. That is the state to preserve — these are far
+cheaper to hold than to restore.
+
+### General types
+
+- **Lowercase primitives only.** `string`, `number`, `boolean`, `symbol` — never
+  `String`, `Number`, `Boolean`, `Symbol`. Those are boxed wrapper objects and are
+  almost never what JavaScript code means. Never `Object` either; if you genuinely
+  mean "any non-primitive", the type is lowercase `object`.
+- **`unknown`, never `any`.** `any` switches type checking off for everything it
+  touches and everything downstream. `unknown` accepts the same values but forces a
+  narrowing before use, which is the actual goal. `any` is defensible only mid-migration
+  from JavaScript, and there is no such migration here.
+- **A generic that never uses its type parameter is not generic.** It is an unchecked
+  assertion wearing a type parameter's clothes, and inference fails silently.
+
+### Callbacks
+
+- **Callback return types are `void`, not `any`.** `void` is what stops a caller from
+  quietly consuming a return value the callback was never meant to produce.
+- **Never mark a callback's parameters optional.** Write
+  `(data: T, elapsed: number) => void`, not `elapsed?: number`. Passing a function that
+  accepts fewer arguments is always legal, so `?` buys nothing — what it actually
+  communicates is "this callback is sometimes invoked with fewer arguments", which is a
+  different claim and usually a false one.
+- **Don't add an overload just to drop a callback parameter.** One signature taking the
+  fuller callback covers both; the shorter overload only lets wrongly-typed functions
+  match.
+
+### Overloads
+
+- **Prefer optional parameters to multiple overloads.** One
+  `diff(one: string, two?: string, three?: boolean)` beats three signatures. Overloads
+  hide argument-count bugs that optional parameters surface.
+- **Prefer union parameters to one overload per type.** `utcOffset(b: number | string)`
+  beats separate `number` and `string` overloads, because a union forwards correctly
+  when a caller passes a value straight through — separate overloads produce spurious
+  errors there.
+- **When overloads are genuinely necessary, order them most-specific first.**
+  TypeScript picks the first match, so a general signature placed above a specific one
+  makes the specific one unreachable.
+
+### Escape hatches
+
+`as unknown as` is the only type escape in the codebase and there are exactly four.
+Treat every one as a debt, not a pattern:
+
+- `api.ts:278` and `api.ts:383` widen the `as const` tuple `SHAPE_ORDER` to `string[]`
+  for a query parameter. `[...SHAPE_ORDER]` does the same widening and type-checks —
+  prefer it.
+- `rankings.ts:300` casts a postgres.js query to `Promise<MeasurableRow[]>`. A library
+  typing gap; leave it, and keep the row type honest.
+- `lineups.ts:586` reads `note` off a `LineupPick`, which does not declare it. The
+  property does survive at runtime — the solver builds picks with `...player`, so the
+  server's richer pool object keeps its fields — but the type has lost it. This one is
+  a real modelling gap: the fix is to make the solver generic over its candidate type
+  so extra fields survive in the types too, not to add another cast.
+
+Adding a fifth requires a comment saying which library or inference limit forced it.
+Reaching for `any` or `@ts-ignore` instead is not the alternative.
 
 ## The budget everything else follows from
 
@@ -138,9 +211,10 @@ Mostly inapplicable while this stays a managed Expo app — there is no `android
 - **ccache** for native compiles: `brew install ccache`, and uncomment `ccache_enabled`
   in `ios/Podfile`. Check it is working with `ccache -s`.
 
-## Known gaps
+## Known gaps — React Native
 
-Real, verified, and unfixed as of the commit that added this file. Fix them when
+The TypeScript debts are listed under *Escape hatches* above. These are the React
+Native ones: real, verified, and unfixed as of this commit. Fix them when
 touching the surrounding code; do not treat the list as done work.
 
 1. `RankingsScreen.tsx:169` and `BestBallScreen.tsx:175` pass inline arrow functions as
