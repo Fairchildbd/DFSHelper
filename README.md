@@ -335,9 +335,3 @@ Four things about this feed shaped the implementation:
   `cfb_id` in nflverse, so there is no shared key. Linking is by normalized name,
   and any name that isn't unique on both sides is left unlinked rather than
   guessed at.
-
-## Next
-
-Player-vs-player matchups: pair opposing players by alignment and diff their
-percentile profiles to surface where one has a physical edge — the reason the
-scores are stored per-metric rather than only as a single composite.
