@@ -7,12 +7,6 @@ export interface Weights {
   nfl: number;
 }
 
-/**
- * Shows how a composite score was actually assembled — how much came from the
- * workout, from college production, and from NFL production. The split is the
- * whole point of the model, so it belongs on the row itself rather than buried
- * in a detail view.
- */
 export function ScoreSplitBar({
   weights,
   compact = false,
@@ -26,8 +20,6 @@ export function ScoreSplitBar({
   const college = Math.round(weights.college * 100);
   const nfl = Math.round(weights.nfl * 100);
 
-  // A veteran with no production on record carries no weights at all — there is
-  // no composition to show, and a blank bar would read as a rendering bug.
   if (athletic + college + nfl === 0) return null;
 
   const segments = [

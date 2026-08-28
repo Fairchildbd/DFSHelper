@@ -1,10 +1,3 @@
-/**
- * Read-only HTTP API over the materialized rankings.
- *
- * Scoring happens in the ingest/rank pass, not per request — every endpoint
- * here is a straight read, so the app stays responsive and the engine's output
- * is identical for every client.
- */
 
 import express, { type Request, type Response } from 'express';
 import {
@@ -34,10 +27,6 @@ import { sql } from './db.ts';
 import { currentWeek, previousWeek } from './matchups.ts';
 import { buildLineup } from './lineups.ts';
 
-/**
- * Human name for a week. Postseason weeks continue the regular-season
- * numbering upstream, so week 22 is the Super Bowl rather than a 22nd Sunday.
- */
 function weekLabel(week: number, gameType: string): string {
   switch (gameType) {
     case 'WC': return 'Wild Card';
@@ -48,23 +37,6 @@ function weekLabel(week: number, gameType: string): string {
   }
 }
 
-/**
- * Adapt an async handler to Express 4's error plumbing.
- *
- * Express 4 ignores a promise returned by a handler, so a rejected one is
- * simply unhandled -- and under Node's default policy an unhandled rejection
- * terminates the process. Every route here reads from Postgres, so a single
- * bad query would take the whole server down instead of failing one request,
- * and the error middleware below would never see it. Forwarding to next()
- * gives that middleware the error and keeps the process alive.
- */
-/**
- * The order the weekly list is grouped in: playable games first, and within
- * the quiet half, the ones with a reason last.
- *
- * Kept as SQL rather than sorted in the client because the sections are the
- * list's structure, not a rendering choice, and two endpoints serve it.
- */
 const SHAPE_ORDER = ['shootout', 'one_sided', 'low_scoring', 'defensive'] as const;
 
 function route(handler: (req: Request, res: Response) => Promise<unknown>) {
@@ -73,13 +45,6 @@ function route(handler: (req: Request, res: Response) => Promise<unknown>) {
   };
 }
 
-/**
- * Reading order for a starting lineup.
- *
- * The upstream slot numbers run in the order ESPN draws its chart — receivers
- * first, quarterback ninth — which is not how anyone reads a lineup. Roles not
- * listed sort to the end of their unit in slot order.
- */
 const ROLE_ORDER: Record<string, string[]> = {
   offense: ['QB', 'RB', 'FB', 'WR', 'TE', 'LT', 'LG', 'C', 'RG', 'RT'],
   defense: [
@@ -105,7 +70,6 @@ export function createApp() {
     res.json({ ok: true, rankedPlayers: row?.count ?? 0 });
   }));
 
-  /** Static description of the scoring model, so the app never hardcodes weights. */
   app.get('/meta', route(async (_req: Request, res: Response) => {
     const [run] = await sql<{ finished_at: Date | null; status: string; detail: unknown }[]>`
       SELECT finished_at, status, detail FROM ingest_runs
@@ -132,10 +96,6 @@ export function createApp() {
     });
   }));
 
-  /**
-   * Ranked players. Filterable by position or cohort, searchable by name.
-   * Ranks are precomputed, so paging never reshuffles the list.
-   */
   app.get('/rankings', route(async (req: Request, res: Response) => {
     const position = typeof req.query.position === 'string' ? req.query.position : null;
     const cohort = typeof req.query.cohort === 'string' ? req.query.cohort : null;
@@ -176,22 +136,7 @@ export function createApp() {
     res.json({ total: count, limit, offset, players: rows });
   }));
 
-  // -------------------------------------------------------------------------
-  // Matchups
-  // -------------------------------------------------------------------------
-
-  /**
-   * Weeks available, and which one the app should open on.
-   *
-   * "Current" is the earliest week still holding an unplayed game, so in the
-   * preseason it is week 1 and mid-season it is the week in progress rather
-   * than the one just finished.
-   */
   app.get('/weeks', route(async (_req: Request, res: Response) => {
-    // Driven by the schedule, not by what has been predicted: the weekly job
-    // only builds the week in play, so joining matchups here would leave the
-    // best-ball selector showing a single chip and no way to see what is
-    // missing. `built` reports coverage instead.
     const current = await currentWeek();
     const season = current?.season ?? null;
 
@@ -219,20 +164,10 @@ export function createApp() {
     res.json({
       weeks,
       current,
-      // True before any game of the week has kicked off, which the list uses to
-      // say that every number on screen comes from prior seasons.
       upcoming: weeks.find((w) => w.week === current?.week)?.played === 0,
     });
   }));
 
-  /**
-   * Static description of the matchup model, mirroring /meta for rankings.
-   *
-   * `model` exists so the About tab can explain the arithmetic without
-   * restating it. Any constant quoted in prose on screen is served from here
-   * rather than typed into the copy, because an explanation that drifts from
-   * the code it describes is worse than no explanation at all.
-   */
   app.get('/matchup-meta', route(async (_req: Request, res: Response) => {
     res.json({
       lanes: LANES.map((l) => ({ key: l.key, label: l.label, shortLabel: l.shortLabel })),
@@ -255,12 +190,6 @@ export function createApp() {
     });
   }));
 
-  /**
-   * One week's slate, grouped by what kind of game each one is.
-   *
-   * `shapeOrder` rides along so a client renders the sections in the order the
-   * query built them rather than reimplementing that order and drifting.
-   */
   app.get('/matchups', route(async (req: Request, res: Response) => {
     const season = req.query.season ? Number(req.query.season) : null;
     const week = req.query.week ? Number(req.query.week) : null;
@@ -275,23 +204,16 @@ export function createApp() {
       WHERE TRUE
         ${season ? sql`AND season = ${season}` : sql``}
         ${week ? sql`AND week = ${week}` : sql``}
-      ORDER BY ARRAY_POSITION(${SHAPE_ORDER as unknown as string[]}::text[], game_shape),
+      ORDER BY ARRAY_POSITION(${[...SHAPE_ORDER]}::text[], game_shape),
                shootout_score DESC NULLS LAST, game_id
     `;
     res.json({ games: rows, shapeOrder: SHAPE_ORDER });
   }));
 
 
-  /**
-   * One matchup in full: both coaching fingerprints, every lane edge, the
-   * graded players, and both starting lineups.
-   */
   app.get('/matchups/:gameId', route(async (req: Request, res: Response) => {
     const gameId = req.params.gameId;
 
-    // The trailing gameday::text shadows the one m.* brings in. gameday is a
-    // DATE, and left alone the driver hands back a JS Date that serialises to a
-    // full UTC instant — a calendar date the client would have to un-convert.
     const [game] = await sql`
       SELECT m.*, m.gameday::text AS gameday,
              g.home_score, g.away_score, g.roof, g.stadium, g.div_game
@@ -316,20 +238,12 @@ export function createApp() {
       ORDER BY pm.matchup_score DESC, pm.gsis_id
     `;
 
-    // The chart to read is the game's own season, falling back to the newest
-    // one on file when a season was never published — a backfilled playoff
-    // game must show the roster that played it, not next year's.
     const [chart] = await sql<{ season: number | null }[]>`
       SELECT MAX(season)::int AS season FROM depth_chart
       WHERE season <= ${game.season}
         AND team IN (${game.home_team}, ${game.away_team})
     `;
 
-    // Starting lineups, one player per lineup slot.
-    //
-    // A slot is the unit of a starting lineup, not a position: three receivers
-    // share pos_abb 'WR' and only their slot separates WR1 from WR3. DISTINCT
-    // ON the slot takes whoever is highest on it and leaves every backup out.
     const starters = await sql`
       SELECT DISTINCT ON (d.team, d.unit, COALESCE(d.pos_slot::text, d.pos_abb))
              d.team, d.unit, d.pos_slot AS slot, d.pos_abb AS role,
@@ -356,13 +270,6 @@ export function createApp() {
     res.json({ ...game, players, starters });
   }));
 
-  /**
-   * The product surface: the week now in play, plus the week just finished.
-   *
-   * Only one week of predictions is ever shown. The previous week is anchored
-   * on kickoff dates rather than week numbers, so before week 1 of a new season
-   * it correctly reaches back to the last game of the old one.
-   */
   app.get('/this-week', route(async (_req: Request, res: Response) => {
     const [current, previous] = await Promise.all([currentWeek(), previousWeek()]);
 
@@ -380,7 +287,7 @@ export function createApp() {
                m.locked, m.result_at
         FROM matchups m
         WHERE m.season = ${period.season} AND m.week = ${period.week}
-        ORDER BY ARRAY_POSITION(${SHAPE_ORDER as unknown as string[]}::text[], m.game_shape),
+        ORDER BY ARRAY_POSITION(${[...SHAPE_ORDER]}::text[], m.game_shape),
                  m.shootout_score DESC NULLS LAST, m.game_id
       `;
       const [meta] = await sql<{ games: number; played: number; game_type: string }[]>`
@@ -396,9 +303,7 @@ export function createApp() {
         games,
         scheduled: meta?.games ?? 0,
         played: meta?.played ?? 0,
-        /** True when nothing has kicked off, so every figure is a forecast. */
         upcoming: (meta?.played ?? 0) === 0,
-        /** True when no prediction has been built for this week yet. */
         missing: games.length === 0,
       };
     };
@@ -407,17 +312,7 @@ export function createApp() {
     res.json({ current: currentBlock, previous: previousBlock, shapeOrder: SHAPE_ORDER });
   }));
 
-  /**
-   * Which DraftKings slates have salaries imported for the current week.
-   *
-   * The app asks this before offering to build anything, because a lineup
-   * without salaries is not a lineup — and the honest answer to "build me one"
-   * on a week nobody has imported is a sentence telling you to import.
-   */
   app.get('/slates', route(async (_req: Request, res: Response) => {
-    // The strategies ride along with the slates because the app needs both to
-    // draw the buttons, and one round trip is one fewer thing to get out of
-    // sync when a strategy is added.
     const current = await currentWeek();
     if (!current) {
       res.json({ season: null, week: null, slates: [], strategies: STRATEGIES });
@@ -442,13 +337,6 @@ export function createApp() {
     res.json({ season: current.season, week: current.week, slates, strategies: STRATEGIES });
   }));
 
-  /**
-   * The lineup itself: the point of the whole application.
-   *
-   * Computed per request rather than materialized, because it depends on locks
-   * and excludes the user is still moving around, and because the search is
-   * milliseconds once the pool is loaded.
-   */
   app.get('/lineup', route(async (req: Request, res: Response) => {
     const current = await currentWeek();
     const season = req.query.season ? Number(req.query.season) : current?.season;
@@ -472,16 +360,11 @@ export function createApp() {
       excludes: list(req.query.excludes),
     });
 
-    // The pool is large and the app only ever renders the lineup plus a short
-    // list of near-misses, so the full pool stays on the server. A showdown
-    // answer is three lineups, so a player seated in any of them is seated.
     const chosen = new Set(
       result.builds
         ? result.builds.flatMap((b) => b.lineup?.picks.map((p) => p.id) ?? [])
         : (result.lineup?.picks.map((p) => p.id) ?? []),
     );
-    // Ranked by grade per dollar, which is the question the optimizer was
-    // answering — these are the seats it nearly bought.
     const bench = result.players
       .filter((p) => !chosen.has(p.id))
       .sort((a, b) => b.value / Math.max(b.salary, 1) - a.value / Math.max(a.salary, 1))
@@ -505,14 +388,6 @@ export function createApp() {
     });
   }));
 
-  /**
-   * One coaching staff's tendency fingerprint.
-   *
-   * Note on attribution: the schedule feed names only the head coach, so a
-   * defensive profile here is the defense his team fielded, which is often
-   * his coordinator's scheme rather than his own. The numbers describe the
-   * unit accurately; the name on them is the head coach's.
-   */
   app.get('/coaches/:name', route(async (req: Request, res: Response) => {
     const coach = req.params.name;
     const rows = await sql`
@@ -536,7 +411,6 @@ export function createApp() {
     res.json({ coach, tendencies: rows, teams });
   }));
 
-  /** Full scoring breakdown for one player, including every metric percentile. */
   app.get('/players/:id', route(async (req: Request, res: Response) => {
     const [row] = await sql`
       SELECT r.*, p.headshot_url, p.college, p.height_inches, p.weight_lbs,
@@ -561,7 +435,7 @@ export function createApp() {
 
   app.use((err: Error, _req: Request, res: Response, _next: unknown) => {
     console.error(err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Internal error' });
   });
 
   return app;

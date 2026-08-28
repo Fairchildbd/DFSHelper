@@ -3,8 +3,6 @@ import { DATABASE_URL } from './env.ts';
 
 export const sql = postgres(DATABASE_URL, {
   ssl: 'require',
-  // Ingest runs long batch inserts; a small pool keeps Neon's connection
-  // limits comfortable while still overlapping network round trips.
   max: 5,
   idle_timeout: 20,
   connect_timeout: 30,
@@ -12,7 +10,6 @@ export const sql = postgres(DATABASE_URL, {
 
 export type Sql = typeof sql;
 
-/** Insert rows in chunks, because a single multi-megabyte statement will not fly. */
 export async function insertBatched<T extends Record<string, unknown>>(
   table: string,
   rows: T[],

@@ -9,6 +9,7 @@ import {
   dkPoints,
   dstPoints,
   dstPointsAllowedScore,
+  MIN_CLASSIC_GAMES,
   gamesUsed,
   matchupValue,
   optimizeClassic,
@@ -158,7 +159,47 @@ test('a pool that cannot fill the roster returns null rather than a partial line
 });
 
 test('classic lineups span more than one game on a real slate', () => {
-  assert.ok(gamesUsed(optimizeClassic(slate())) >= 2);
+  assert.ok(gamesUsed(optimizeClassic(slate())) >= MIN_CLASSIC_GAMES);
+});
+
+function oneGameIsBest() {
+  const pool = [];
+  const add = (position, count, game, score) => {
+    for (let i = 0; i < count; i++) {
+      pool.push({
+        id: `${position}${i}-${game}`,
+        name: `${position} ${i} (${game})`,
+        position,
+        team: `${game}${i % 2 === 0 ? 'H' : 'A'}`,
+        gameId: game,
+        salary: 4000,
+        matchupScore: score,
+        value: matchupValue(position, score),
+      });
+    }
+  };
+  for (const [game, score] of [['G1', 95], ['G2', 5]]) {
+    add('QB', 2, game, score);
+    add('RB', 4, game, score);
+    add('WR', 5, game, score);
+    add('TE', 3, game, score);
+    add('DST', 2, game, score);
+  }
+  return pool;
+}
+
+test('the two-game rule is enforced even when one game holds every best player', () => {
+  const lineup = optimizeClassic(oneGameIsBest());
+  assert.ok(lineup, 'a legal lineup exists and should have been found');
+  assert.ok(gamesUsed(lineup) >= MIN_CLASSIC_GAMES);
+  assert.equal(lineup.picks.length, CLASSIC_SLOTS.length);
+  assert.ok(lineup.salary <= SALARY_CAP);
+});
+
+test('the two-game rule gives up the least valuable seat, not an arbitrary one', () => {
+  const lineup = optimizeClassic(oneGameIsBest());
+  const weak = lineup.picks.filter((p) => p.gameId === 'G2');
+  assert.equal(weak.length, 1);
 });
 
 // ---------------------------------------------------------------------------

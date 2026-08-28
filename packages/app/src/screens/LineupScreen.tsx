@@ -18,17 +18,6 @@ import {
 } from '../api';
 import { getPixels, theme } from '../theme';
 
-/**
- * The lineup the app exists to produce.
- *
- * Deliberately shows its work. An optimizer that hands over nine names and no
- * reasoning is a black box, and a black box is useless the moment you disagree
- * with it — which is most weeks, because you know things it does not: a player
- * is questionable, a beat writer said something at noon, you already used
- * Mahomes in three other entries. So every pick carries its price, its
- * projection, and where that projection came from, and every pick can be
- * dropped and the lineup rebuilt around what remains.
- */
 export function LineupScreen({
   slate,
   strategy,
@@ -39,9 +28,7 @@ export function LineupScreen({
   slate: SlateSummary;
   strategy: StrategyDefinition;
   onBack: () => void;
-  /** Where back goes, since a showdown build is opened from its own matchup. */
   backLabel?: string;
-  /** The game, for a showdown, which is a one-game contest by definition. */
   label?: string;
 }) {
   const [data, setData] = useState<LineupResponse | null>(null);
@@ -49,13 +36,6 @@ export function LineupScreen({
   const [error, setError] = useState<string | null>(null);
   const [excludes, setExcludes] = useState<string[]>([]);
   const [locks, setLocks] = useState<string[]>([]);
-  /**
-   * Which scenario is on screen.
-   *
-   * Null until the person picks one, which is what lets the model's read be the
-   * default without an effect that would fight them for the selection every
-   * time the lineup is rebuilt.
-   */
   const [choice, setChoice] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -91,8 +71,6 @@ export function LineupScreen({
     setExcludes((current) => [...current, id]);
   };
 
-  // The model's read is the default until someone chooses otherwise, and no
-  // read means all four, since that is the honest answer to an unreadable game.
   const selected = choice ?? data?.read?.scenario ?? ALL;
   const shown = (data?.builds ?? []).filter((b) => selected === ALL || b.key === selected);
 
@@ -102,13 +80,6 @@ export function LineupScreen({
         <Text style={styles.backText}>‹ {backLabel}</Text>
       </Pressable>
 
-      {/*
-        Showdown gets its own copy rather than the weekly strategy's.
-        The slate strategy is a statement about which of thirteen games to
-        stack and which to leave alone, and a single-game contest has already
-        answered that question — printing it here would describe a decision
-        this screen never made.
-      */}
       {slate.contest === 'showdown' ? (
         <>
           <Text style={styles.title}>Showdown captain</Text>
@@ -287,24 +258,13 @@ function Figure({
   );
 }
 
-/** The pseudo-scenario that shows every entry at once. */
 const ALL = 'all';
 
-/** A build's name on a chip: the team it backs, or what it is hedging. */
 function shortLabel(build: ShowdownBuild): string {
   if (build.team) return build.team;
   return build.key === 'shootout' ? 'Shootout' : 'Low-scoring';
 }
 
-/**
- * Which game this is going to be — the one judgement the model does not make
- * for you.
- *
- * The read is offered rather than applied. It is built from the same lane edges
- * as everything else on the matchup screen, so it can be checked; it is marked
- * on the chip it points at; and it is only ever a starting selection, because
- * the person entering the contest knows things the model does not.
- */
 function ScenarioPicker({
   builds,
   read,
@@ -362,17 +322,6 @@ function ScenarioPicker({
   );
 }
 
-/**
- * One of the four showdown entries.
- *
- * Each carries its own account of what it is betting on, because three lineups
- * that differ by two players are indistinguishable without one — and the whole
- * reason there are three is that they are answers to different questions.
- *
- * Drops and locks are shared: a player ruled out is out of all three, which is
- * what an injury means. A lock that one entry's shape cannot hold turns that
- * entry into its own explanation rather than silently ignoring the lock.
- */
 function BuildCard({
   build,
   locks,
@@ -417,14 +366,6 @@ function BuildCard({
   );
 }
 
-/**
- * One roster spot.
- *
- * The note under each name is the answer to "why him", and it is deliberately a
- * sentence about football rather than a number from the model: a per-game
- * average over a stated number of games, or the opponent's implied point total
- * for a defense.
- */
 function PickRow({
   pick,
   locked,
@@ -551,8 +492,6 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   pickLocked: { borderWidth: 1, borderColor: theme.accent },
-  // A left edge rather than a full border, so it reads as "part of the stack"
-  // without competing with the lock outline.
   pickStacked: { borderLeftWidth: 3, borderLeftColor: theme.college },
   strategyNote: { color: theme.textFaint, fontSize: getPixels(11), lineHeight: getPixels(16), marginBottom: 12 },
   stackBanner: {

@@ -1,23 +1,7 @@
-/**
- * Presentation helpers for the matchup layer.
- *
- * The recurring problem these solve is direction. A lane edge is signed —
- * positive means the offense holds the advantage, negative means the defense
- * does — and a raw signed number in a list is close to unreadable. Every
- * helper here turns the sign into words before it reaches the screen.
- */
 
 import type { GameShape } from './api';
 import { theme } from './theme';
 
-/**
- * Colour for a signed edge.
- *
- * Deliberately not a symmetric red/green ramp. A large negative edge is not
- * "bad news" in the abstract — it is a strong signal, just one that says fade
- * rather than play — so both extremes get saturated colour and only the
- * genuinely even middle goes grey.
- */
 export function edgeColor(edge: number | null): string {
   if (edge == null) return theme.textFaint;
   if (edge >= 45) return '#34D399';
@@ -27,7 +11,6 @@ export function edgeColor(edge: number | null): string {
   return '#F87171';
 }
 
-/** Mismatch scores run roughly 29-88 in practice, so the ramp is fitted there. */
 export function mismatchColor(score: number): string {
   if (score >= 70) return '#34D399';
   if (score >= 58) return '#A3E635';
@@ -35,13 +18,6 @@ export function mismatchColor(score: number): string {
   return theme.textDim;
 }
 
-/**
- * Shootout scores cluster tighter than mismatch scores, so the ramp is steeper.
- *
- * Four blended percentile components regress toward the middle in a way a
- * root-mean-square of the four most extreme lanes does not, and reusing the
- * mismatch ramp painted an entire slate the same grey.
- */
 export function shootoutColor(score: number): string {
   if (score >= 62) return '#34D399';
   if (score >= 54) return '#A3E635';
@@ -49,13 +25,6 @@ export function shootoutColor(score: number): string {
   return theme.textDim;
 }
 
-/**
- * The four sections of the weekly list, and what each one is telling you.
- *
- * The blurb is not decoration. A section header that says only "Low-scoring"
- * leaves the reader to guess whether that is a warning or a note, and the two
- * quiet sections mean opposite things about what to do with the games in them.
- */
 export const GAME_SHAPES: Record<
   GameShape,
   { title: string; blurb: string; color: string }
@@ -85,13 +54,6 @@ export const GAME_SHAPES: Record<
   },
 };
 
-/**
- * Rewrite a signed lane headline as a sentence with a direction.
- *
- * The stored label is neutral ("CIN pass game vs TB"); which side that favours
- * lives entirely in the sign, so the label alone would tell a reader the
- * opposite of the truth half the time.
- */
 export function describeEdge(label: string | null, value: number | null): string {
   if (!label || value == null) return 'No gradeable mismatch';
   const [offense, defense] = label.split(' vs ');
@@ -102,7 +64,6 @@ export function describeEdge(label: string | null, value: number | null): string
     : `${defense} shuts down ${offense}`;
 }
 
-/** Format one tendency value according to its unit. */
 export function formatTendency(value: number, unit: string): string {
   switch (unit) {
     case 'pct':
@@ -116,14 +77,6 @@ export function formatTendency(value: number, unit: string): string {
   }
 }
 
-/**
- * How a staff profile was sourced, in words the user can act on.
- *
- * This is the honest half of the coach-keyed model: when a coach is new to the
- * league there is no head-coaching record to profile, and the screen has to say
- * that it is describing the franchise's recent past rather than the man now
- * running it.
- */
 export function tendencySourceLabel(
   source: 'coach' | 'team' | 'league',
   coach: string | null,
@@ -138,14 +91,6 @@ export function tendencySourceLabel(
   }
 }
 
-/**
- * Kickoff clock, in words rather than in the schedule feed's raw form.
- *
- * nflverse stores gametime as a 24-hour "HH:MM" string that is always Eastern,
- * with no offset attached. Rather than guess a UTC instant from it — the offset
- * swings with DST and a wrong guess silently moves a late window game — the
- * time is relabelled in place and the zone stated outright.
- */
 function formatGametime(gametime: string): string {
   const match = /^(\d{1,2}):(\d{2})/.exec(gametime.trim());
   if (!match) return gametime;
@@ -157,17 +102,11 @@ function formatGametime(gametime: string): string {
   return `${hour12}:${match[2]} ${suffix} ET`;
 }
 
-/** Kickoff line: "Sun, Sep 13 · 1:00 PM ET". */
 export function formatKickoff(gameday: string | null, gametime: string | null): string {
   const time = gametime ? formatGametime(gametime) : '';
   if (!gameday) return time;
 
-  // gameday should arrive as a bare "YYYY-MM-DD", but an upstream DATE that
-  // slips through as a full instant would otherwise poison the parse and get
-  // printed verbatim, so take the calendar date off the front either way.
   const day = gameday.slice(0, 10);
-  // Parsed as UTC deliberately: the date is a calendar date, and letting the
-  // device's timezone shift it can move a Sunday game to Saturday.
   const date = new Date(`${day}T00:00:00Z`);
   if (Number.isNaN(date.getTime())) return time || gameday;
 
@@ -180,5 +119,4 @@ export function formatKickoff(gameday: string | null, gametime: string | null): 
   return time ? `${formatted} · ${time}` : formatted;
 }
 
-/** Positions a DFS lineup is actually built from. */
 export const SKILL_POSITIONS = ['QB', 'RB', 'WR', 'TE'];

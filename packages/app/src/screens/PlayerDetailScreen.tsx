@@ -26,12 +26,6 @@ const DRILL_UNITS: Record<string, string> = {
   broad: '"',
 };
 
-/**
- * The minimum a caller must hold to open this screen.
- *
- * The matchup list knows a player's identity but not his ranking columns, so
- * the numeric fields are optional and are filled in from the fetched detail.
- */
 export type PlayerRef = Pick<RankedPlayer, 'gsis_id' | 'display_name' | 'position'> &
   Partial<RankedPlayer>;
 
@@ -42,13 +36,11 @@ export function PlayerDetailScreen({
 }: {
   player: PlayerRef;
   onBack: () => void;
-  /** Where the back arrow returns to, since two screens now open this one. */
   backLabel?: string;
 }) {
   const [detail, setDetail] = useState<PlayerDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  // Prefer the fetched row: a caller may have handed us identity only.
   const view: PlayerRef = detail ?? player;
 
   useEffect(() => {
@@ -286,10 +278,6 @@ function MetricBar({
   );
 }
 
-/**
- * Metrics stored as proportions. Shown as percentages, because "0.01" reads as
- * a rounding artefact where "1.3%" reads as an interception rate.
- */
 const PROPORTION_METRICS = new Set([
   'interception_rate',
   'target_share',
@@ -302,8 +290,6 @@ function formatRaw(raw: number | null, metric: string): string {
   if (raw == null) return '—';
   const value = Number(raw);
   if (PROPORTION_METRICS.has(metric)) return `${(value * 100).toFixed(1)}%`;
-  // Per-opportunity EPA is small and signed; two decimals would hide the sign's
-  // significance at this scale.
   if (metric.includes('_per_')) return value.toFixed(3);
   return Number.isInteger(value) ? String(value) : value.toFixed(2);
 }

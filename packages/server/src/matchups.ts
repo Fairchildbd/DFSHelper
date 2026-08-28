@@ -1,16 +1,3 @@
-/**
- * Weekly matchup materialization.
- *
- * Runs after `computeRankings`, because it consumes `rankings.composite` as the
- * "how good is this unit" input. The output is two tables: one row per game
- * carrying its mismatch score and lane breakdown, and one row per player
- * carrying his graded spot in that game.
- *
- * Like the ranking pass this is a full rebuild rather than an incremental
- * update — a week of new data moves every percentile underneath it, so a
- * partial refresh would leave the two halves of the table describing different
- * versions of the league.
- */
 
 import {
   DVP_POSITIONS,
@@ -80,45 +67,14 @@ interface DepthRow {
   ranked_position: string | null;
 }
 
-/**
- * How a lane's defensive grade is split between three readings of the same
- * defense.
- *
- *   DVP    — what it has surrendered to *this position*, per game, schedule-
- *            corrected. The most specific evidence available, and it leads.
- *   DVOA   — its opponent-adjusted efficiency allowed on this play type. Less
- *            specific than DVP but far better sampled: a season of plays rather
- *            than a season of games, so it is the steadier of the two.
- *   Scheme — how it chooses to play: pressure, blitz, box counts.
- *
- * Scheme used to carry 0.4 and to include the raw `epa_allowed_*` figures.
- * That was doing two jobs at once, and the comment here used to admit it — it
- * noted that a defense's results are partly a product of the offenses it
- * happened to face, and leaned on scheme to compensate for a bias nothing was
- * actually correcting. Now that the bias is corrected directly, scheme can go
- * back to meaning disposition and gives up weight to the results it was
- * standing in for.
- *
- * Weights are renormalized over whichever components resolve, so a lane with no
- * defense-versus-position profile — the offensive line — is graded on the other
- * two rather than being dragged toward the middle.
- */
 const DVP_WEIGHT = 0.45;
 const DVOA_WEIGHT = 0.3;
 const SCHEME_WEIGHT = 0.25;
 
-/** Blend weights inside a player's projected-volume figure. */
 const VOLUME_ROLE_WEIGHT = 0.6;
 const VOLUME_PACE_WEIGHT = 0.2;
 const VOLUME_USAGE_WEIGHT = 0.2;
 
-/**
- * Resolve which season to build matchups for.
- *
- * The next unplayed game decides it, so the table follows the calendar without
- * needing a configured season. In the preseason that is the coming year; in
- * January it is still the season in progress.
- */
 async function targetSeason(): Promise<number> {
   const [row] = await sql<{ season: number | null }[]>`
     SELECT season FROM games
@@ -134,7 +90,6 @@ async function targetSeason(): Promise<number> {
   return fallback?.season ?? new Date().getFullYear();
 }
 
-/** Tendency values for one side, keyed by metric. */
 type Values = Record<string, number>;
 
 interface ProfileBooks {
@@ -161,12 +116,6 @@ function indexTendencies(rows: TendencyRow[], side: Side): {
   return { byKey };
 }
 
-/**
- * Look up a staff's profile, falling back through coach → team → league.
- *
- * The league entry is built from the distribution means rather than from a
- * stored row, so it is always available and always current.
- */
 function profileFor(
   books: ProfileBooks,
   coach: string | null,
@@ -190,7 +139,6 @@ function profileFor(
   );
 }
 
-/** Percentile of one tendency metric within the league distribution. */
 function tendencyPercentile(
   books: ProfileBooks,
   profile: ResolvedTendencies,
@@ -198,25 +146,10 @@ function tendencyPercentile(
   metric: string,
 ): number | null {
   const definition = tendencyMetric(side, metric);
-  // `higherIsBetter` is only set on metrics where good and bad are meaningful.
-  // A stylistic metric is percentiled as-is: high means "more of this", not
-  // "better at this".
   const lowerIsBetter = definition?.higherIsBetter === false;
   return percentileOf(profile.values[metric], books.dist[metric], lowerIsBetter);
 }
 
-/**
- * Where this staff sits among the league on one metric, as a plain rank.
- *
- * Ranked against the 32 team profiles, which are the same population the
- * percentile is measured against, so the rank and the bar can never disagree.
- * Direction follows the percentile: rank 1 is the top of the scale, meaning
- * the most of a stylistic metric and the best of a metric where good and bad
- * are meaningful.
- *
- * Ties share a rank — two staffs at an identical rate are both 7th — because
- * breaking a tie on nothing would invent an ordering the data does not have.
- */
 function tendencyRank(
   books: ProfileBooks,
   profile: ResolvedTendencies,
@@ -243,18 +176,7 @@ function tendencyRank(
 }
 
 export interface MatchupOptions {
-  /**
-   * `week` predicts only the week now in play — the product surface. `season`
-   * predicts every remaining game of the year, which is the best-ball view and
-   * is far more expensive to keep honest.
-   */
   scope?: 'week' | 'season';
-  /**
-   * Games to predict even though they have already been played, so the results
-   * view has something real to render. Rows created this way are flagged
-   * `backfilled`, because a forecast produced after the whistle is a
-   * demonstration of the model rather than a forecast it ever made.
-   */
   backfill?: string[];
 }
 
@@ -282,8 +204,6 @@ export async function computeMatchups(opts: MatchupOptions = {}): Promise<{
         (backfill.length ? ` (plus ${backfill.length} backfilled)` : ''),
   );
 
-  // A locked row is a prediction that has already been measured against a
-  // result. Rebuilding it would silently rewrite history with hindsight.
   const locked = await sql<{ game_id: string }[]>`
     SELECT game_id FROM matchups WHERE locked = TRUE
   `;
@@ -342,31 +262,11 @@ export async function computeMatchups(opts: MatchupOptions = {}): Promise<{
     return { season, week: current?.week ?? null, games: 0, players: 0, skippedLocked };
   }
 
-  // --- distributions ------------------------------------------------------
-  //
-  // The league population is the 32 team profiles, not the coach list: coaches
-  // repeat across a multi-season window and vary wildly in sample, so using
-  // them would let one heavily-sampled staff distort the very scale it is then
-  // measured against.
-
   const books: Record<Side, ProfileBooks> = {
     offense: buildBooks(coachRows, teamRows, 'offense'),
     defense: buildBooks(coachRows, teamRows, 'defense'),
   };
 
-  /*
-   * Defense versus position, from the schedule-corrected figure.
-   *
-   * `fp_allowed_adj` is what this defense would concede to a league-average
-   * offense; `fp_allowed` is what it happened to concede to the offenses on its
-   * schedule. Grading on the raw number rewarded defenses for a soft slate, and
-   * since this percentile carries the largest single share of every lane's
-   * defensive grade, that bias reached the mismatches the app actually shows.
-   *
-   * The raw metric is still written and still shown — the gap between the two
-   * is the strength of schedule. It is just no longer what anything is graded
-   * on. The fallback exists for a database whose DVOA pass has not run yet.
-   */
   const DVP_METRIC = 'fp_allowed_adj';
   const DVP_FALLBACK = 'fp_allowed';
   const dvpAdjusted = dvpRows.some((r) => r.metric === DVP_METRIC);
@@ -386,20 +286,12 @@ export async function computeMatchups(opts: MatchupOptions = {}): Promise<{
     if (r.metric === dvpMetric) dvpByTeam.set(`${r.team}|${r.position}`, r.value);
   }
 
-  // Opponent-adjusted efficiency allowed, percentiled across the 32 defenses
-  // the same way every other league-relative figure here is.
   const dvoaByTeam = new Map<string, number>();
   for (const r of dvoaRows) dvoaByTeam.set(`${r.team}|${r.metric}`, r.value);
   const dvoaDist = buildDistributions(
     dvoaRows.map((r) => ({ metric: r.metric, value: r.value })),
   );
 
-  // --- depth charts by team ------------------------------------------------
-
-  // A player can hold two slots on one chart — a swing lineman listed at both
-  // guard spots, a nickel corner who is also the second safety. Keep the slot
-  // he is highest on, which is the role he will actually play, so he is neither
-  // counted twice in his unit's strength nor graded twice in the same game.
   const bestSlot = new Map<string, DepthRow>();
   for (const row of depth) {
     const key = `${row.season}|${row.team}|${row.gsis_id}`;
@@ -408,8 +300,6 @@ export async function computeMatchups(opts: MatchupOptions = {}): Promise<{
     bestSlot.set(key, row);
   }
 
-  // Keyed by season too: a backfilled playoff game must be graded against the
-  // roster that played it, not against next year's depth chart.
   const depthByTeam = new Map<string, DepthRow[]>();
   for (const row of bestSlot.values()) {
     const key = `${row.season}|${row.team}`;
@@ -418,14 +308,6 @@ export async function computeMatchups(opts: MatchupOptions = {}): Promise<{
     else depthByTeam.set(key, [row]);
   }
 
-  /** Roster for a team in a season, falling back to the newest chart we hold. */
-  /**
-   * Carries per game for every quarterback, over the last two seasons.
-   *
-   * Two seasons rather than one because designed quarterback runs are a scheme
-   * trait and change slowly, and because a single season of a backup's
-   * spot starts is a thin sample to call someone a runner on.
-   */
   const qbCarries = new Map<string, number>();
   {
     const rows = await sql<{ gsis_id: string; carries_per_game: number }[]>`
@@ -451,17 +333,6 @@ export async function computeMatchups(opts: MatchupOptions = {}): Promise<{
     return seasons.length > 0 ? (depthByTeam.get(`${seasons[0]}|${team}`) ?? []) : [];
   };
 
-  // --- unit strength, as a percentile within its own lane ------------------
-  //
-  // A unit's raw strength is a role-weighted mean of ranking composites, and
-  // composites of depth-chart starters sit well above the league mean by
-  // construction — the population they were percentiled against includes every
-  // fringe roster player. Subtracting a defensive *percentile* from that raw
-  // number compared two different scales and handed the offense a systematic
-  // ~17-point advantage in every lane. Percentiling unit strength against the
-  // other 31 teams in the same lane puts both sides of the subtraction in the
-  // same units, so an edge of zero means a genuinely even matchup.
-
   const rawStrength = new Map<string, number>();
   for (const [key, roster] of depthByTeam) {
     for (const lane of LANES) {
@@ -470,8 +341,6 @@ export async function computeMatchups(opts: MatchupOptions = {}): Promise<{
     }
   }
 
-  // One distribution per season and lane. A 2025 playoff roster belongs in the
-  // 2025 league population, not pooled with 2026's.
   const laneDist: Record<string, Distribution> = {};
   const bySeasonLane = new Map<string, number[]>();
   for (const [key, value] of rawStrength) {
@@ -499,8 +368,6 @@ export async function computeMatchups(opts: MatchupOptions = {}): Promise<{
     );
   };
 
-  // --- per-game ------------------------------------------------------------
-
   const matchupRows: Record<string, unknown>[] = [];
   const playerRows: Record<string, unknown>[] = [];
 
@@ -510,8 +377,6 @@ export async function computeMatchups(opts: MatchupOptions = {}): Promise<{
 
     const edges: LaneEdge[] = [];
     const laneEdgeByTeamLane = new Map<string, number | null>();
-    // Keyed on the *defending* team, which is what a quarterback's legs are
-    // matched against when the passing lane cannot express them.
     const laneSuppression = new Map<string, number | null>();
 
     for (const [offense, defense] of [
@@ -530,10 +395,6 @@ export async function computeMatchups(opts: MatchupOptions = {}): Promise<{
           dvoaDist,
           books,
         });
-        // Label the lane with its direction so a game's twelve edges stay
-        // distinguishable once they are flattened into one list — and carry the
-        // two teams as fields as well, since the game-script read groups edges
-        // by offense and should not have to parse a sentence to do it.
         edges.push({
           ...edge,
           offense: offense.team,
@@ -560,14 +421,7 @@ export async function computeMatchups(opts: MatchupOptions = {}): Promise<{
       week: game.week,
       game_type: game.game_type,
       predicted_at: new Date(),
-      // Set explicitly rather than left to the column default. `insertBatched`
-      // upserts, and a DEFAULT only fires on insert — so a rebuilt row kept the
-      // timestamp of the day it was first created and every freshness display
-      // reading this column was days stale while the row underneath was current.
       computed_at: new Date(),
-      // A prediction produced for a game that has already been played is a
-      // demonstration, not a forecast. The flag rides along so the results
-      // screen can label it rather than claim credit for it.
       backfilled: alreadyPlayed,
       locked: false,
       gameday: game.gameday,
@@ -579,10 +433,6 @@ export async function computeMatchups(opts: MatchupOptions = {}): Promise<{
       mismatch_score: round2(mismatch.mismatchScore),
       edge_score: round2(mismatch.edgeScore),
       edge_count: mismatch.edgeCount,
-      // The second reading of the same game. `graded` guards it rather than
-      // the score itself: with no gradeable lane the shootout score would be
-      // built from the total alone, which is a number the market already
-      // publishes and not something this model has a view on.
       shootout_score: mismatch.graded === 0 ? null : round2(mismatch.shootout.score),
       shootout_applied: mismatch.graded === 0 ? null : mismatch.shootout.applied,
       lean_team: mismatch.shootout.leanTeam,
@@ -600,8 +450,6 @@ export async function computeMatchups(opts: MatchupOptions = {}): Promise<{
       } as never),
     });
 
-    // --- players ---------------------------------------------------------
-
     for (const [team, opponent] of [
       [home, away],
       [away, home],
@@ -610,7 +458,7 @@ export async function computeMatchups(opts: MatchupOptions = {}): Promise<{
       const pace = percentileOf(
         team.offense.values.sec_per_play,
         books.offense.dist.sec_per_play,
-        true, // faster is better for volume
+        true,
       );
 
       for (const player of roster) {
@@ -620,26 +468,16 @@ export async function computeMatchups(opts: MatchupOptions = {}): Promise<{
         if (!laneKey) continue;
         const lane = LANES_BY_KEY[laneKey];
 
-        // A pass-catching back is graded in the receiving lane when his coach
-        // actually throws to backs; otherwise the run lane is the honest one.
         const effectiveLane =
           position === 'RB' &&
           (tendencyPercentile(books.offense, team.offense, 'offense', 'rb_target_share') ?? 0) >= 65
             ? LANES_BY_KEY.rb_recv
             : lane;
 
-        // Only players the lane actually counts are graded. A depth chart's
-        // fourth quarterback is not a DFS decision, and listing him alongside
-        // the starter — on the same lane edge, since the edge belongs to the
-        // unit — makes the list read as though he were one.
         if (player.pos_rank != null && player.pos_rank > effectiveLane.maxRank) continue;
 
         const unitEdge = laneEdgeByTeamLane.get(`${team.team}|${effectiveLane.key}`) ?? null;
 
-        // A quarterback's lane grades coverage, so a designed-run offense
-        // against a soft front is invisible in it. This is the one place a
-        // player's own trait modifies a unit-level edge, and it is bounded
-        // hard enough to stay a modifier.
         const rushAdjustment =
           position === 'QB'
             ? qbRushAdjustment(
@@ -693,8 +531,6 @@ export async function computeMatchups(opts: MatchupOptions = {}): Promise<{
     }
   }
 
-  // Replace only what we just rebuilt. Truncating would take locked rows with
-  // it, and those are the record of what the model actually predicted.
   const rebuiltIds = targets.map((g) => g.game_id);
   await sql`DELETE FROM player_matchups WHERE game_id = ANY(${rebuiltIds})`;
   await insertBatched('matchups', matchupRows, '(game_id)');
@@ -709,12 +545,6 @@ export async function computeMatchups(opts: MatchupOptions = {}): Promise<{
   };
 }
 
-/**
- * The week now in play: the earliest one still holding an unplayed game.
- *
- * Ordered by kickoff rather than by week number so it stays correct across a
- * season boundary, where week 1 of the new year follows week 22 of the old.
- */
 export async function currentWeek(): Promise<{ season: number; week: number } | null> {
   const [row] = await sql<{ season: number; week: number }[]>`
     SELECT season, week FROM games
@@ -725,14 +555,6 @@ export async function currentWeek(): Promise<{ season: number; week: number } | 
   return row ?? null;
 }
 
-/**
- * The most recently completed week, wherever it falls.
- *
- * Deliberately not "current week minus one": before week 1 of a new season the
- * previous week of football is the last one of the old season, which right now
- * is the Super Bowl. Anchoring on kickoff dates rather than week numbers gets
- * that right without a special case.
- */
 export async function previousWeek(): Promise<{ season: number; week: number } | null> {
   const [row] = await sql<{ season: number; week: number }[]>`
     SELECT season, week FROM games
@@ -744,18 +566,8 @@ export async function previousWeek(): Promise<{ season: number; week: number } |
   return row ?? null;
 }
 
-/** Skill positions, which are the ones a results comparison is about. */
 const SKILL = ['QB', 'RB', 'WR', 'TE'];
 
-/**
- * Attach real results to predictions whose games have finished, and lock them.
- *
- * Locking is the point. Once a prediction has been set beside the result it was
- * measuring, it must never be recomputed — otherwise the next refresh would
- * rebuild it from a tendency window that now contains the very game it was
- * predicting, and every accuracy figure on the screen would be the model
- * grading its own homework.
- */
 export async function attachResults(): Promise<{ games: number; players: number }> {
   const pending = await sql<
     {
@@ -777,8 +589,6 @@ export async function attachResults(): Promise<{ games: number; players: number 
   let playerCount = 0;
 
   for (const game of pending) {
-    // Postseason stats live under a different season_type at the same week
-    // number, so the join has to know which kind of game this was.
     const seasonType = game.game_type === 'REG' ? 'REG' : 'POST';
 
     const actuals = await sql<
@@ -815,9 +625,6 @@ export async function attachResults(): Promise<{ games: number; players: number 
       ORDER BY matchup_score DESC, gsis_id
     `;
 
-    // Ranks are computed over skill players only: an offensive lineman has no
-    // fantasy line to compare against, and including them would make the hit
-    // rate a measure of how many linemen we listed.
     const skill = predicted.filter((p) => SKILL.includes(p.position));
     const predictedRank = new Map(skill.map((p, i) => [p.gsis_id, i + 1]));
 
@@ -871,10 +678,6 @@ export async function attachResults(): Promise<{ games: number; players: number 
   return { games: pending.length, players: playerCount };
 }
 
-// ---------------------------------------------------------------------------
-// helpers
-// ---------------------------------------------------------------------------
-
 function round2(value: number): number {
   return Math.round(value * 100) / 100;
 }
@@ -921,7 +724,6 @@ function sideContext(
   };
 }
 
-/** Everything the app needs to render one staff's fingerprint. */
 function describeSide(side: SideContext, books: Record<Side, ProfileBooks>) {
   const render = (s: Side, profile: ResolvedTendencies) => ({
     source: profile.source,
@@ -947,12 +749,6 @@ function describeSide(side: SideContext, books: Record<Side, ProfileBooks>) {
   };
 }
 
-/**
- * Combined pace of the two offenses, as a percentile.
- *
- * Two fast offenses mean more snaps for everyone, which is worth as much to a
- * DFS lineup as any single mismatch.
- */
 function combinedPacePercentile(
   home: SideContext,
   away: SideContext,
@@ -963,16 +759,9 @@ function combinedPacePercentile(
   );
   if (values.length === 0) return null;
   const mean = values.reduce((a, b) => a + b, 0) / values.length;
-  // Lower seconds per play is a faster game, so invert.
   return percentileOf(mean, book.dist.sec_per_play, true);
 }
 
-/**
- * Role-weighted mean ranking composite for one team's unit in one lane.
- *
- * Raw and un-percentiled: the caller compares it against the same figure for
- * the other 31 teams before it means anything.
- */
 function unitStrength(roster: DepthRow[], lane: Lane): number | null {
   let weighted = 0;
   let weight = 0;
@@ -995,7 +784,6 @@ interface LaneEvaluation {
   lane: Lane;
   offense: SideContext;
   defense: SideContext;
-  /** Already percentiled against the same lane across the league. */
   offenseStrength: number | null;
   dvpByTeam: Map<string, number>;
   dvpDist: Record<string, Distribution>;
@@ -1009,19 +797,15 @@ function evaluateLane(input: LaneEvaluation): LaneEdge {
     lane, offense, defense, offenseStrength, dvpByTeam, dvpDist, dvoaByTeam, dvoaDist, books,
   } = input;
 
-  // --- defensive suppression ---
   let dvpPercentile: number | null = null;
   if (lane.dvpPosition) {
     const allowed = dvpByTeam.get(`${defense.team}|${lane.dvpPosition}`);
-    // Fewer points allowed is a better defense, so this is inverted.
     dvpPercentile = percentileOf(allowed, dvpDist[lane.dvpPosition], true);
   }
 
   let dvoaPercentile: number | null = null;
   if (lane.dvoaMetric) {
     const allowed = dvoaByTeam.get(`${defense.team}|${lane.dvoaMetric}`);
-    // Less expected value surrendered per play is a better defense, so this is
-    // inverted for the same reason the points-allowed percentile is.
     dvoaPercentile = percentileOf(allowed, dvoaDist[lane.dvoaMetric], true);
   }
 
@@ -1033,16 +817,6 @@ function evaluateLane(input: LaneEvaluation): LaneEdge {
       ? schemeParts.reduce((a, b) => a + b, 0) / schemeParts.length
       : null;
 
-  /*
-   * Blend whichever readings resolved, renormalized over their weights.
-   *
-   * Renormalizing rather than substituting a neutral value is the same rule the
-   * ranking engine follows for a missing drill: a component nobody has evidence
-   * for drops out and the rest speak for the whole, instead of a fabricated
-   * fiftieth percentile pulling every grade toward the middle. The offensive
-   * line lane has no defense-versus-position profile at all and is graded on
-   * the other two — correctly, rather than at a permanent discount.
-   */
   const components: Array<[number | null, number]> = [
     [dvpPercentile, DVP_WEIGHT],
     [dvoaPercentile, DVOA_WEIGHT],
@@ -1066,8 +840,6 @@ function evaluateLane(input: LaneEvaluation): LaneEdge {
 
 if (import.meta.url === `file://${process.argv[1]}`) {
   try {
-    // --season builds every remaining game of the year (the best-ball view).
-    // Default is the week now in play, which is the product surface.
     const scope = process.argv.includes('--season') ? 'season' : 'week';
     const backfillFlag = process.argv.indexOf('--backfill');
     const backfill =

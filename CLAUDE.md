@@ -2,9 +2,9 @@
 
 `PROJECT.md` outranks this file — see the first section.
 
-Four sets of rules follow: **TypeScript** and **code smells**, which apply across the
-monorepo; **SQL**, which applies to `packages/server`; and **React Native
-performance**, which applies to `packages/app`.
+Five sets of rules follow: **comments**, **TypeScript** and **code smells**, which
+apply across the monorepo; **SQL**, which applies to `packages/server`; and **React
+Native performance**, which applies to `packages/app`.
 
 The React Native half is distilled from the official docs —
 [Performance](https://reactnative.dev/docs/performance),
@@ -36,6 +36,27 @@ The type-scale rule (`getPixels` on every `fontSize`/`lineHeight`) lives in
 - **It is gitignored and local to this working copy.** If it is not present, say so and
   ask rather than assuming what it said; do not reconstruct it from the code, and do not
   commit it.
+
+## Comments
+
+**SQL comments the why.** SQL is not readable on its own, so the reasoning behind a
+clause has nowhere else to live. This holds inside `` sql`` `` templates exactly as it
+does in `schema.sql`.
+
+**JavaScript and TypeScript carry none**, outside the two exceptions below. They are
+readable, so a comment only adds a second thing to keep true: if a line needs
+explaining, the name or the shape is wrong, and that is what to fix.
+
+**Two exceptions, both cases where no name can carry the information:**
+
+- **A complicated regex.** Put a worked example above it — what goes in, what comes out.
+- **A type escape hatch.** Every `as unknown as` names the library or inference limit
+  that forced it, in a comment above the cast. The cast says what the type is; only the
+  comment says why the compiler had to be overruled, and without it the next reader
+  cannot tell a library gap from a shortcut.
+
+Nothing else. Not a section header, not a summary of the function below, not a note
+about why a change was made. That last one belongs in the commit message.
 
 ## TypeScript
 
@@ -104,8 +125,9 @@ Treat every one as a debt, not a pattern:
   a real modelling gap: the fix is to make the solver generic over its candidate type
   so extra fields survive in the types too, not to add another cast.
 
-Adding a fifth requires a comment saying which library or inference limit forced it.
-Reaching for `any` or `@ts-ignore` instead is not the alternative.
+Every one carries a comment naming the library or inference limit that forced it — one
+of the two cases where a comment belongs in TypeScript. Reaching for `any` or
+`@ts-ignore` instead is not the alternative.
 
 ## Code smells
 
@@ -143,8 +165,8 @@ the day they matter.
   Separate and delegate.
 - **Complicated Boolean Expression** — Conditions welded together behind a
   function-shaped name. Prefer `shouldBeConsumed(bottle)` to `bottle.consumed()`.
-- **Complicated Regex Expression** — A pattern nobody can read. Put worked examples in
-  a comment beside it.
+- **Complicated Regex Expression** — A pattern nobody can read. The one place a
+  comment is warranted: put a worked example above it.
 - **Conditional Complexity** — Nested branching that turns reading into a memory game.
   Split the paths.
 - **Data Clump** — The same few values travelling together everywhere. They are a type
@@ -156,7 +178,7 @@ the day they matter.
   descend exactly one level of abstraction below its own name.
 - **Duplicated Code** — Second worst thing in the file, after dead code.
 - **Fallacious Comment** — A comment explaining WHAT becomes a lie as the code moves.
-  Comment WHY.
+  In SQL, rewrite it to the why; in JavaScript, delete it. See *Comments*.
 - **Fallacious Method Name** — `getBeer()` returning soda water. The name is a promise;
   keep it or change it.
 - **Fate over Action** — Assuming nothing else mutates the object you're holding. Don't
@@ -232,7 +254,7 @@ the day they matter.
 - **Vertical Separation** — Declaration far above use. Introduce variables where they
   are used.
 - **"What" Comment** — A comment narrating the code below it is usually hiding another
-  smell. Be suspicious of what follows one.
+  smell. Be suspicious of what follows one. See *Comments*.
 
 ### Two exceptions this codebase has already decided
 
@@ -275,8 +297,8 @@ either. Do not reorder these under time pressure.
 
 ### Comments
 
-Comment the **why**, same rule as the rest of the codebase. A query's *what* is already
-in the SQL; what the reader cannot recover is the reasoning. `api.ts:163` is the model
+Comment the **why** — the one place in this repo where comments belong. A query's
+*what* is already in the SQL; what the reader cannot recover is the reasoning. `api.ts:119` is the model
 to copy — it explains that `gsis_id` is in the `ORDER BY` to force a total order,
 because without it a row can appear on two consecutive pages.
 

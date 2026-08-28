@@ -1,14 +1,3 @@
-/**
- * Full ingest from nflverse into Neon.
- *
- * Order matters: players first, because it is the only source carrying both
- * gsis_id and pfr_id, and every other table needs that mapping to resolve
- * identity.
- *
- * Every loader is idempotent (upsert on the natural key), so a re-run is safe
- * and the Wednesday refresh is just this same pipeline with a narrower season
- * filter.
- */
 
 import { cohortFor, normalizePosition } from '@dfs/shared';
 import { insertBatched, sql } from '../db.ts';
@@ -25,9 +14,7 @@ import {
 } from '../nflverse.ts';
 
 interface LoadOptions {
-  /** Ignore the disk cache and re-download. */
   force?: boolean;
-  /** Only load rows at or after this season. */
   seasonStart?: number;
 }
 
@@ -81,7 +68,7 @@ export async function loadCombine(opts: LoadOptions = {}): Promise<number> {
 
     const row = {
       measurable_key: key,
-      gsis_id: null, // linked in a second pass, once players is loaded
+      gsis_id: null,
       pfr_id: str(r.pfr_id),
       player_name: name,
       source: 'combine',
@@ -99,8 +86,6 @@ export async function loadCombine(opts: LoadOptions = {}): Promise<number> {
       shuttle: num(r.shuttle),
     };
 
-    // Postgres rejects a batch that touches the same key twice, so any residual
-    // collision is resolved here. Keep whichever row has more drills on it.
     const existing = byKey.get(key);
     if (existing) {
       collisions++;
@@ -119,10 +104,6 @@ export async function loadCombine(opts: LoadOptions = {}): Promise<number> {
     '(measurable_key, source)',
   );
 
-  // Link measurables to league ids via pfr_id — but only where that id is
-  // unambiguous. nflverse reuses some pfr_ids across different people, and
-  // attaching one player's combine numbers to another is far worse than
-  // leaving a handful of players without measurables.
   const linked = await sql`
     WITH unambiguous AS (
       SELECT pfr_id FROM measurables
@@ -152,39 +133,23 @@ export async function loadCombine(opts: LoadOptions = {}): Promise<number> {
   return count;
 }
 
-/** How many of the six drills a row actually carries. */
 function drillCount(row: Record<string, unknown>): number {
   return ['forty', 'bench', 'vertical', 'broad', 'cone', 'shuttle'].filter(
     (d) => row[d] != null,
   ).length;
 }
 
-/**
- * Rate-valued columns. Everything else in the weekly tables is a counting stat.
- * The distinction matters when merging duplicate rows: counts add, rates do not.
- */
 const RATE_COLUMNS = new Set([
   'target_share',
   'air_yards_share',
   'wopr',
-  // Snap percentages are shares of a team's plays; adding two teams' shares
-  // together would let a traded player post 140% participation.
   'offense_pct',
   'defense_pct',
   'st_pct',
 ]);
 
-/** Columns that identify a weekly row rather than measure it. */
 const KEY_COLUMNS = new Set(['gsis_id', 'season', 'week', 'season_type', 'team', 'opponent', 'position']);
 
-/**
- * Fold a duplicate weekly row into the one already collected.
- *
- * nflverse credits a traded player under both teams in the week of the move, so
- * the same (player, season, week) appears twice with each team's partial line.
- * Those are two halves of one game: counting stats sum, rate stats take the
- * larger of the two, and the team field records that it was a split week.
- */
 function mergeWeeklyRow(
   target: Record<string, unknown>,
   incoming: Record<string, unknown>,
@@ -203,14 +168,6 @@ function mergeWeeklyRow(
   }
 }
 
-/**
- * Weekly player stats, offense and defense, from the current per-season files.
- *
- * One source row can produce a row in each table. A player is only written to a
- * table if they actually recorded something there — otherwise every receiver
- * would land in the defensive table with an empty stat line and get scored as a
- * defender who never makes a tackle.
- */
 export async function loadWeeklyStats(
   seasons: number[],
   opts: LoadOptions = {},
@@ -246,7 +203,6 @@ export async function loadWeeklyStats(
           attempts: int(r.attempts),
           passing_yards: num(r.passing_yards),
           passing_tds: int(r.passing_tds),
-          // Renamed upstream from `interceptions` when the release changed.
           interceptions: int(r.passing_interceptions),
           passing_epa: num(r.passing_epa),
           passing_first_downs: num(r.passing_first_downs),
@@ -266,10 +222,6 @@ export async function loadWeeklyStats(
           fantasy_points_ppr: num(r.fantasy_points_ppr),
         };
 
-        // There is no `def_tackles` column any more. Combined tackles are solo
-        // plus assisted; checked against the frozen legacy file on 2024, this
-        // reproduces the old column on 95.9% of rows, where the alternative
-        // (solo + def_tackle_assists) matches only 30.6%.
         const solo = num(r.def_tackles_solo) ?? 0;
         const withAssist = num(r.def_tackles_with_assist) ?? 0;
 
@@ -333,7 +285,6 @@ export async function loadWeeklyStats(
   return { offense: offenseTotal, defense: defenseTotal, skipped };
 }
 
-/** Columns whose presence means the player actually did something on that side. */
 const OFFENSE_SIGNALS = [
   'completions', 'attempts', 'carries', 'targets', 'receptions',
   'passing_yards', 'rushing_yards', 'receiving_yards',
@@ -351,7 +302,6 @@ function hasAny(row: Record<string, unknown>, columns: string[]): boolean {
   });
 }
 
-/** Snap counts ship one file per season and key on pfr_id, not gsis_id. */
 export async function loadSnaps(seasons: number[], opts: LoadOptions = {}): Promise<number> {
   let total = 0;
   for (const season of seasons) {
@@ -381,7 +331,6 @@ export async function loadSnaps(seasons: number[], opts: LoadOptions = {}): Prom
         else byKey.set(key, row);
       }
     } catch (err) {
-      // A season file may not exist yet (e.g. before week 1). Skip, don't fail.
       console.warn(`  snap counts ${season}: ${(err as Error).message}`);
       continue;
     }
@@ -426,7 +375,6 @@ export async function runIngest(opts: LoadOptions = {}): Promise<Record<string, 
   return counts;
 }
 
-// Run directly: `npm run ingest -w @dfs/server`
 if (import.meta.url === `file://${process.argv[1]}`) {
   const started = Date.now();
   const [run] = await sql<{ id: number }[]>`

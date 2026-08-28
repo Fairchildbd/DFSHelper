@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Dimensions,
   FlatList,
   Pressable,
   RefreshControl,
@@ -11,26 +12,21 @@ import {
   View,
 } from 'react-native';
 import { API_URL, fetchRankings, type RankedPlayer } from '../api';
-import { PlayerRow } from '../components/PlayerRow';
+import { PLAYER_ROW_HEIGHT, PlayerRow } from '../components/PlayerRow';
 import { getPixels, theme } from '../theme';
 
 const PAGE_SIZE = 50;
 
-/**
- * Append a page, dropping ids already on screen.
- *
- * The API orders deterministically, but the weekly refresh rebuilds `rankings`
- * wholesale, so a page fetched after it lands sits at a shifted offset and can
- * repeat a row that is already in the list. Duplicate ids would collide in
- * keyExtractor, so they are dropped here rather than rendered.
- */
+const ROWS_ON_FIRST_PAINT = Math.ceil(Dimensions.get('window').height / PLAYER_ROW_HEIGHT) + 1;
+
+const VIEWPORTS_KEPT_MOUNTED = 11;
+
 function appendUnique(prev: RankedPlayer[], next: RankedPlayer[]): RankedPlayer[] {
   const seen = new Set(prev.map((p) => p.gsis_id));
   const fresh = next.filter((p) => !seen.has(p.gsis_id));
   return fresh.length === next.length ? [...prev, ...next] : [...prev, ...fresh];
 }
 
-/** Filter chips, ordered the way a DFS lineup gets built rather than alphabetically. */
 const POSITIONS = ['QB', 'RB', 'WR', 'TE', 'LB', 'EDGE', 'DT', 'DE', 'CB', 'S', 'OT', 'OG', 'C'];
 
 export function RankingsScreen({
@@ -48,8 +44,6 @@ export function RankingsScreen({
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Guards against an older in-flight request overwriting a newer filter's
-  // results when the user taps through chips quickly.
   const requestId = useRef(0);
 
   useEffect(() => {
@@ -96,6 +90,11 @@ export function RankingsScreen({
     setLoadingMore(true);
     load(players.length);
   };
+
+  const renderPlayer = useCallback(
+    ({ item }: { item: RankedPlayer }) => <PlayerRow player={item} onPress={onSelectPlayer} />,
+    [onSelectPlayer],
+  );
 
   const header = useMemo(
     () => (
@@ -166,7 +165,14 @@ export function RankingsScreen({
     <FlatList
       data={players}
       keyExtractor={(p) => p.gsis_id}
-      renderItem={({ item }) => <PlayerRow player={item} onPress={onSelectPlayer} />}
+      renderItem={renderPlayer}
+      getItemLayout={(_data, index) => ({
+        length: PLAYER_ROW_HEIGHT,
+        offset: PLAYER_ROW_HEIGHT * index,
+        index,
+      })}
+      initialNumToRender={ROWS_ON_FIRST_PAINT}
+      windowSize={VIEWPORTS_KEPT_MOUNTED}
       ListHeaderComponent={header}
       stickyHeaderIndices={[]}
       onEndReached={handleEndReached}

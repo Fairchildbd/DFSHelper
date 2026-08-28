@@ -1,13 +1,9 @@
+import { memo } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { weightsOf, type RankedPlayer } from '../api';
 import { confidenceLabel, getPixels, scoreColor, theme } from '../theme';
 import { ScoreSplitBar } from './ScoreSplitBar';
 
-/**
- * Why a player sits where he does when the score alone would not explain it.
- * Quarterbacks are ordered by whether they hold the job before they are ordered
- * by score, so a backup with a flattering number needs to say so on the row.
- */
 function roleNote(player: RankedPlayer): string | null {
   if (player.position === 'QB' && player.rank_tier === 1) return 'Spot starter';
   if (player.position === 'QB' && player.rank_tier === 2) return 'Backup — no starts';
@@ -15,7 +11,17 @@ function roleNote(player: RankedPlayer): string | null {
   return null;
 }
 
-export function PlayerRow({
+const NAME_LINE = getPixels(20);
+const META_LINE = getPixels(17);
+const NOTE_LINE = getPixels(16);
+const BAR_HEIGHT = 4;
+const ROW_GAP = 3;
+const ROW_PAD_V = 12;
+
+export const PLAYER_ROW_HEIGHT =
+  ROW_PAD_V * 2 + NAME_LINE + META_LINE + NOTE_LINE + BAR_HEIGHT + ROW_GAP * 3;
+
+export const PlayerRow = memo(function PlayerRow({
   player,
   onPress,
 }: {
@@ -47,8 +53,12 @@ export function PlayerRow({
             .filter(Boolean)
             .join(' · ')}
         </Text>
-        {roleNote(player) && <Text style={styles.unqualified}>{roleNote(player)}</Text>}
-        <ScoreSplitBar weights={weightsOf(player)} compact />
+        <Text style={styles.unqualified} numberOfLines={1}>
+          {roleNote(player) ?? ''}
+        </Text>
+        <View style={styles.barSlot}>
+          <ScoreSplitBar weights={weightsOf(player)} compact />
+        </View>
       </View>
 
       <View style={styles.scoreCol}>
@@ -61,13 +71,14 @@ export function PlayerRow({
       </View>
     </Pressable>
   );
-}
+});
 
 const styles = StyleSheet.create({
   row: {
+    height: PLAYER_ROW_HEIGHT,
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 12,
+    paddingVertical: ROW_PAD_V,
     paddingHorizontal: 16,
     gap: 12,
     borderBottomWidth: StyleSheet.hairlineWidth,
@@ -77,10 +88,16 @@ const styles = StyleSheet.create({
   rankCol: { width: 36, alignItems: 'center' },
   rank: { color: theme.text, fontSize: getPixels(16), fontWeight: '700' },
   rankLabel: { color: theme.textFaint, fontSize: getPixels(10), fontWeight: '600' },
-  mainCol: { flex: 1, gap: 3 },
-  name: { color: theme.text, fontSize: getPixels(15), fontWeight: '600' },
-  meta: { color: theme.textDim, fontSize: getPixels(12) },
-  unqualified: { color: theme.warn, fontSize: getPixels(11), fontWeight: '600' },
+  mainCol: { flex: 1, gap: ROW_GAP },
+  name: { color: theme.text, fontSize: getPixels(15), lineHeight: NAME_LINE, fontWeight: '600' },
+  meta: { color: theme.textDim, fontSize: getPixels(12), lineHeight: META_LINE },
+  unqualified: {
+    color: theme.warn,
+    fontSize: getPixels(11),
+    lineHeight: NOTE_LINE,
+    fontWeight: '600',
+  },
+  barSlot: { height: BAR_HEIGHT, justifyContent: 'center' },
   scoreCol: { alignItems: 'flex-end', width: 78 },
   score: { fontSize: getPixels(22), fontWeight: '800', fontVariant: ['tabular-nums'] },
   confidence: { fontSize: getPixels(10), fontWeight: '600' },
