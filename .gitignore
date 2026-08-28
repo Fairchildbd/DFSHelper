@@ -6,3 +6,7 @@ dist/
 .expo/
 .DS_Store
 packages/server/.cache/
+
+# Local-only project direction. Deliberately not committed: it carries the DFS
+# strategy and the standing decisions behind it. CLAUDE.md references it.
+PROJECT.md
