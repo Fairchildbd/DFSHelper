@@ -121,28 +121,145 @@ Two further guards keep the weight table honest:
   production at that stage is itself the result. Without this, a career backup's
   combine numbers resurface at full weight and beat actual starters.
 
-## Setup
+## Getting started
+
+### Prerequisites
+
+- **Node 22.6 or newer.** The server runs TypeScript directly through
+  `node --experimental-strip-types`, which does not exist in earlier versions.
+  Check with `node -v`.
+- A **[Neon](https://neon.tech)** account. The free plan runs the whole
+  pipeline; the retention setting below is what keeps it inside the cap.
+- Optionally **Expo Go** on a phone, to run the client on hardware instead of a
+  simulator.
+
+### 1. Install
 
 ```bash
-npm install
-cp .env.example .env          # then put your real Neon URL in .env
-npm test                      # verify the engine
-npm run db:migrate            # create tables
-npm run db:ingest             # first full load (~90s)
-npm run rank -w @dfs/server   # compute baselines + rankings
-npm run api                   # API on :4000
-
-cd packages/app && npm install && npm start
+git clone https://github.com/Fairchildbd/DFSHelper.git
+cd DFSHelper
+npm install                    # shared + server
+npm --prefix packages/app install
 ```
 
-The app is not an npm workspace — Metro and workspace hoisting fight each other,
-so it installs separately.
+The app installs separately because it is deliberately not an npm workspace —
+Metro's resolver and workspace hoisting fight each other.
 
-On a physical device, `localhost` is the phone, not your Mac:
+### 2. Create the Neon database
+
+1. Sign up and create a project. Any name works; pick the region closest to
+   you, since every ingest batch is a network round trip.
+2. Neon provisions a database named `neondb` and an owner role automatically.
+   Nothing else needs setting up there — `db:migrate` creates all 22 tables in
+   step 4.
+3. On the project dashboard, open **Connect** and copy the connection string.
+   Pooled or direct both work; the pooled endpoint (host contains `-pooler`) is
+   the better default. It looks like:
+
+   ```
+   postgresql://neondb_owner:PASSWORD@ep-still-frost-12345678-pooler.us-east-2.aws.neon.tech/neondb?sslmode=require
+   ```
+
+   Copy the whole string now — Neon shows the password in full only at
+   creation time. If you lose it, reset the role's password from the dashboard.
+
+### 3. Configure the environment
 
 ```bash
-EXPO_PUBLIC_API_URL=http://192.168.1.x:4000 npm start
+cp .env.example .env
 ```
+
+Paste the Neon string into `DATABASE_URL`. It is the only required variable;
+everything else has a working default.
+
+| Variable | Required | Default | Purpose |
+|---|---|---|---|
+| `DATABASE_URL` | **yes** | — | Neon connection string |
+| `PORT` | no | `4000` | Port the API listens on |
+| `INGEST_SEASON_START` | no | `2015` | Earliest season of weekly stats to pull |
+| `RETENTION_SEASONS` | no | `4` | Seasons of weekly stats kept in the database |
+| `CFBD_API_KEY` | no | empty | College stats — see [College data](#college-data) |
+| `COLLEGE_SEASON_START` | no | `2015` | Earliest college season to pull |
+
+Two things about this file:
+
+- There is **one `.env`, at the repo root** — not one per workspace. The server
+  resolves it by path, so `packages/server/.env` is silently ignored.
+- TLS is required by the client regardless of the URL, so a string without
+  `?sslmode=require` still connects.
+
+`RETENTION_SEASONS` is the one worth understanding on the free plan. The weekly
+tables only ever grow; without a ceiling the storage cap arrives as failed
+writes in the middle of an ingest, which reads as a broken pipeline rather than
+a full disk.
+
+### 4. Build and load the data
+
+```bash
+npm run build                  # shared/dist — the server imports the compiled package
+npm test                       # 149 tests, no database needed
+npm run db:migrate             # create the tables in Neon
+npm run db:ingest              # first full load from nflverse (~90s)
+npm run rank -w @dfs/server    # baselines + rankings
+```
+
+Both data steps are safe to re-run: every table is `CREATE TABLE IF NOT EXISTS`
+and every loader upserts on a natural key, so a run interrupted halfway just
+needs starting again.
+
+For the matchup, This Week, and lineup screens, continue with:
+
+```bash
+npm run db:ingest:matchups     # schedule, depth charts, play-by-play tendencies, DVOA
+npm run db:matchups            # materialize the weekly matchup grades
+```
+
+Order matters here — matchups consume the composite scores that the ranking
+pass produces, so `rank` has to have run first.
+
+The lineup screen additionally needs a DraftKings slate, which cannot be
+downloaded: export `DKSalaries.csv` from the contest lobby's draft screen and
+import it. Use an absolute path, since the script runs with `packages/server`
+as its working directory:
+
+```bash
+npm run ingest:dk -w @dfs/server -- --file /absolute/path/to/DKSalaries.csv
+```
+
+### 5. Run it
+
+```bash
+npm run api        # http://localhost:4000
+```
+
+Verify with `curl localhost:4000/health`, then
+`curl "localhost:4000/rankings?limit=5"`.
+
+In a second terminal:
+
+```bash
+npm run app        # Expo dev server — press i for iOS, a for Android, w for web
+```
+
+The client defaults to `localhost:4000` on an iOS simulator and `10.0.2.2:4000`
+on an Android emulator. On a **physical device** `localhost` is the phone
+itself, so it needs your machine's LAN address:
+
+```bash
+cp packages/app/.env.example packages/app/.env
+# then set EXPO_PUBLIC_API_URL=http://<LAN IP>:4000    (ipconfig getifaddr en0)
+```
+
+### Troubleshooting
+
+| Symptom | Cause |
+|---|---|
+| `Missing DATABASE_URL` | No `.env` at the repo root, or the placeholder is still in it |
+| `Cannot find module '@dfs/shared'` | `npm run build` hasn't run — the server imports `dist`, not source |
+| `bad option: --experimental-strip-types` | Node is older than 22.6 |
+| First query after a pause takes several seconds | Neon suspends a free-plan compute after ~5 minutes idle; it wakes on connect |
+| App loads but every list is empty | API is reachable but `rank` (or `db:matchups`, or the DK import) hasn't run |
+| `ECONNREFUSED` from the app on a device | `EXPO_PUBLIC_API_URL` still points at `localhost` |
 
 ## Weekly refresh
 
