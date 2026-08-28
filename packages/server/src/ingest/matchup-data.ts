@@ -1,9 +1,3 @@
-/**
- * Ingest for everything the matchup layer needs, in dependency order.
- *
- * The schedule has to land first: it is the only source that ties a play to a
- * coaching staff, so the tendency pass cannot attribute anything without it.
- */
 
 import { sql } from '../db.ts';
 import { PRODUCTION_WINDOW_SEASONS, TENDENCY_WINDOW_SEASONS } from '../env.ts';
@@ -14,17 +8,9 @@ import { loadDepthChart, loadSchedule } from './schedule.ts';
 
 interface Options {
   force?: boolean;
-  /** Season whose depth chart is loaded. Defaults to the next unplayed season. */
   season?: number;
 }
 
-/**
- * Seasons that feed tendency and defensive profiles.
- *
- * Deliberately the *completed* seasons behind the target: in the preseason
- * there are no plays from the upcoming year at all, and in-season the current
- * year is included as soon as it has games.
- */
 async function windowSeasons(target: number): Promise<number[]> {
   const [row] = await sql<{ season: number | null }[]>`
     SELECT MAX(season)::int AS season FROM player_week_offense
@@ -55,9 +41,6 @@ export async function runMatchupIngest(opts: Options = {}): Promise<Record<strin
   const seasons = await windowSeasons(season);
   console.log(`  target season ${season}; tendency window ${seasons.join(', ')}`);
 
-  // The previous season's chart is loaded too, so a just-finished game — or a
-  // backfilled playoff game — is graded against the roster that played it
-  // rather than against next year's.
   console.log('depth charts…');
   counts.depth_chart = await loadDepthChart(season, opts);
   counts.depth_chart_prev = await loadDepthChart(season - 1, opts);
@@ -79,16 +62,6 @@ export async function runMatchupIngest(opts: Options = {}): Promise<Record<strin
   counts.def_vs_position = await computeDefenseVsPosition(seasons);
   console.log(`  ${counts.def_vs_position} rows`);
 
-  /*
-   * Opponent adjustment, last because it is the only step that wants two
-   * different windows at once.
-   *
-   * The fit spans the full tendency window, since a defensive coefficient
-   * estimated on one thin season is a noisy correction applied to every player
-   * who faced that team. Player rates are held to the production window, which
-   * is what the ranking engine scores everyone else over — letting them run
-   * wider would credit a player for seasons the rest of the board has aged out.
-   */
   const playerSeasons = seasons.slice(-PRODUCTION_WINDOW_SEASONS);
   console.log(
     `opponent-adjusted efficiency (fit ${seasons.join(', ')}; ` +
@@ -105,7 +78,6 @@ export async function runMatchupIngest(opts: Options = {}): Promise<Record<strin
   return counts;
 }
 
-// Run directly: `npm run ingest:matchups -w @dfs/server`
 if (import.meta.url === `file://${process.argv[1]}`) {
   const started = Date.now();
   try {

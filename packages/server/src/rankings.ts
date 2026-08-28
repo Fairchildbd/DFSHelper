@@ -1,13 +1,3 @@
-/**
- * Baseline computation and ranking materialization.
- *
- * Runs in two passes because percentiles are relative: every player's raw
- * numbers must be collected before anyone can be told where they sit. Pass one
- * derives mean/sd per (scope, metric); pass two scores each player against it.
- *
- * Both passes are pure reads plus one upsert, so this is safe to re-run and is
- * exactly what the Wednesday refresh calls after ingest.
- */
 
 import {
   ALL_DRILLS,
@@ -25,20 +15,12 @@ import {
 import { insertBatched, sql } from './db.ts';
 import { ACTIVE_SINCE_SEASON, PRODUCTION_WINDOW_SEASONS } from './env.ts';
 
-/** Minimum games before a player's rates are allowed to shape a baseline. */
 const MIN_BASELINE_GAMES = 4;
 
-/** Counters that gate how far production is trusted, rather than being scored. */
 const OPPORTUNITY_COLUMNS = new Set(['pass_attempts', 'touches', 'targets', 'starts']);
 
-/** Columns that are neither metrics nor scored values. */
 const NON_METRIC_COLUMNS = new Set(['gsis_id', 'games', 'seasons', ...OPPORTUNITY_COLUMNS]);
 
-/**
- * The opportunity count that gates a position's production, in the unit that
- * actually separates a starter from a reserve. Defenders have no clean counter
- * in the public feed, so games stands in for them.
- */
 function opportunitiesFor(
   position: Position,
   rates: { games: number; counts: Record<string, number> } | undefined,
@@ -76,11 +58,6 @@ interface ProductionRow {
   [metric: string]: number | string;
 }
 
-/**
- * One measurable set per player, preferring the combine over a pro day.
- * Pro-day numbers are famously faster than combine numbers on the same athlete,
- * so mixing them freely would bias the sample; combine wins when both exist.
- */
 const MEASURABLE_SELECT = sql`
   SELECT DISTINCT ON (COALESCE(m.gsis_id, m.measurable_key))
     m.gsis_id, m.position, m.source,
@@ -97,23 +74,6 @@ const MEASURABLE_SELECT = sql`
            m.season DESC NULLS LAST
 `;
 
-/**
- * Offensive production over the window.
- *
- * Two things to be careful about here.
- *
- * Every count is cast to numeric before dividing. `interceptions` and
- * `receptions` are INTEGER columns, and integer division silently floored them:
- * a quarterback with 7 picks in 17 games scored 7/17 = 0, and 65 running backs
- * had their receptions per game truncated to zero.
- *
- * EPA is per opportunity, not per game. Per-game EPA conflates efficiency with
- * volume, and for a negative stat that punishes starters twice — a full-time
- * quarterback having a bad year accumulates deeply negative EPA while a reserve
- * who barely plays sits near zero and therefore near the middle of the
- * distribution. Volume is already represented by PPR points per game; this
- * column should measure quality alone.
- */
 function offenseRates(seasonFrom: number) {
   return sql<ProductionRow[]>`
     SELECT gsis_id,
@@ -158,7 +118,6 @@ function offenseRates(seasonFrom: number) {
   `;
 }
 
-/** Per-game defensive rates over the production window. */
 function defenseRates(seasonFrom: number) {
   return sql<ProductionRow[]>`
     SELECT gsis_id,
@@ -175,19 +134,6 @@ function defenseRates(seasonFrom: number) {
   `;
 }
 
-/**
- * College production, on a best-season basis.
- *
- * Counting stats take the player's peak year rather than a career average: the
- * stats feed reports season totals with no games-played field, so a true
- * per-game rate is not derivable, and averaging would punish a redshirt or
- * injury season that says nothing about how good the player is. Ratio stats use
- * career totals, where the bigger denominator is more stable.
- *
- * Unfiltered by experience on purpose — every college player with a league id
- * seeds the baselines, so a rookie is percentiled against all of them rather
- * than against the handful who happen to be rookies right now.
- */
 function collegeRates() {
   return sql<ProductionRow[]>`
     SELECT gsis_id,
@@ -216,25 +162,6 @@ function collegeRates() {
   `;
 }
 
-/**
- * Opponent-adjusted efficiency and success rate, materialized by the DVOA
- * ingest pass.
- *
- * Read rather than computed here because it needs play-by-play, which this
- * module never touches — `rankings.ts` works from the weekly tables, and a play
- * loop over three seasons does not belong inside a two-pass baseline build.
- * See ingest/dvoa.ts for the fit.
- *
- * `games` comes along so these rows clear the same minimum-sample filter every
- * other production source is held to. Without it the filter reads NaN, which
- * compares false against the threshold and lets a one-game cameo seed a
- * positional baseline.
- *
- * A missing table is not an error state. If the DVOA pass has not run, every
- * adjusted metric is simply absent, `scoreComponent` renormalizes over the
- * metrics that are present, and the only consequence is lower production
- * confidence — which is the truthful reading of having less evidence.
- */
 function dvoaRates() {
   return sql<ProductionRow[]>`
     SELECT gsis_id,
@@ -249,7 +176,6 @@ function dvoaRates() {
   `;
 }
 
-/** Snap share, joined back to gsis_id through players.pfr_id. */
 function snapRates(seasonFrom: number) {
   return sql<ProductionRow[]>`
     SELECT p.gsis_id,
@@ -278,25 +204,11 @@ export async function computeRankings(): Promise<{ ranked: number; baselines: nu
   const latestSeason = max_season ?? new Date().getFullYear();
   const seasonFrom = latestSeason - (PRODUCTION_WINDOW_SEASONS - 1);
 
-  /*
-   * TODO(availability): this window is calendar seasons, not seasons played.
-   *
-   * A player who missed a season to injury or suspension has that season
-   * counted against his window anyway, so the window can come back empty or
-   * half-empty for someone with a long record of real production. That is the
-   * mechanism behind the Ridley case documented on NO_PRODUCTION_ANCHOR in
-   * shared/src/scoring.ts — and note it is not fixed by counting experience
-   * differently, because the window is a separate clock from the weight table.
-   *
-   * What it should be: the last PRODUCTION_WINDOW_SEASONS seasons in which the
-   * player actually played, so missed time is skipped rather than scored as
-   * absence. Doing that per player means this can no longer be one global
-   * seasonFrom, which is the real work here.
-   */
-
   console.log(`Production window: ${seasonFrom}–${latestSeason}`);
 
   const [measurables, offense, defense, snaps, college, dvoa, players] = await Promise.all([
+    // postgres.js types a query as PendingQuery, which is thenable but not a
+    // Promise, so Promise.all cannot infer its row type.
     MEASURABLE_SELECT as unknown as Promise<MeasurableRow[]>,
     offenseRates(seasonFrom),
     defenseRates(seasonFrom),
@@ -315,8 +227,6 @@ export async function computeRankings(): Promise<{ ranked: number; baselines: nu
     `,
   ]);
 
-  // ---- Pass 1: baselines -------------------------------------------------
-
   const baselineRows: Array<{ position: Position; metric: string; value: number }> = [];
 
   for (const m of measurables) {
@@ -330,8 +240,6 @@ export async function computeRankings(): Promise<{ ranked: number; baselines: nu
     }
   }
 
-  // Production baselines are drawn only from players with a real sample, so a
-  // one-snap cameo cannot drag a positional mean toward zero.
   const positionById = new Map<string, Position>();
   for (const p of players) {
     const position = normalizePosition(p.position);
@@ -372,8 +280,6 @@ export async function computeRankings(): Promise<{ ranked: number; baselines: nu
   await sql`TRUNCATE baselines`;
   await insertBatched('baselines', baselinePayload, '(scope, metric)');
 
-  // ---- Pass 2: score every active player ---------------------------------
-
   const measurablesById = new Map<string, MeasurableRow>();
   for (const m of measurables) {
     if (m.gsis_id) measurablesById.set(m.gsis_id, m);
@@ -393,7 +299,6 @@ export async function computeRankings(): Promise<{ ranked: number; baselines: nu
           entry.games = Math.max(entry.games, n);
           continue;
         }
-        // Opportunity counters feed sample confidence, not the score itself.
         if (OPPORTUNITY_COLUMNS.has(metric)) {
           if (Number.isFinite(n)) entry.counts[metric] = Math.max(entry.counts[metric] ?? 0, n);
           continue;
@@ -433,21 +338,6 @@ export async function computeRankings(): Promise<{ ranked: number; baselines: nu
       position,
       team: p.team,
       age: p.age == null ? null : Math.round(p.age * 10) / 10,
-      /*
-       * TODO(availability): nflverse `years_of_experience` counts elapsed
-       * seasons, not seasons played, and it drives both the college weight
-       * decay and the year-four cutoff where the anchor becomes reachable.
-       *
-       * So a player who missed years to injury or suspension is aged past his
-       * college record without ever having replaced it with NFL production.
-       * Backtest example: Travis Etienne, 2023 week 17 — two seasons elapsed,
-       * one played (missed his rookie year), scored on year-two college weight
-       * after a single season of football.
-       *
-       * Scale: 523 of 1,707 players active in 2025 have at least one missing
-       * season, though it only changes the score for players inside the first
-       * three years or sitting on the anchor.
-       */
       yearsExperience: p.years_experience ?? 0,
       measurables: m
         ? {
@@ -471,8 +361,6 @@ export async function computeRankings(): Promise<{ ranked: number; baselines: nu
 
   const scores = inputs.map((input) => scorePlayer(input, table));
 
-  // Qualified before unqualified, then starters before backups at positions
-  // where holding the job is the point, then score. See compareForRanking.
   scores.sort(compareForRanking);
 
   const positionCounters = new Map<string, number>();

@@ -1,13 +1,3 @@
-/**
- * Weekly refresh — intended for Wednesdays, once the previous week's games are
- * final and nflverse has published its update.
- *
- * Only the current season's weekly stats are re-pulled; combine data changes
- * once a year and the historical seasons are immutable. Rankings are then
- * recomputed from scratch, because a new week shifts every percentile.
- *
- *   0 9 * * 3  cd /path/to/DFSHelper && npm run db:refresh >> refresh.log 2>&1
- */
 
 import { sql } from './db.ts';
 import { runIngest } from './ingest/index.ts';
@@ -27,26 +17,13 @@ async function main() {
   `;
 
   try {
-    // force: skip the disk cache, since the point of the run is fresh data.
     const counts = await runIngest({ force: true, seasonStart: currentSeason });
     const matchupCounts = await runMatchupIngest({ force: true });
     const ranking = await computeRankings();
-    // After rankings, not before: a lane's unit strength is built from the
-    // composites that pass has just recomputed.
-    // Week-scoped on purpose: the weekly job forecasts the week now in play and
-    // leaves finished weeks locked. The season-wide best-ball build is a
-    // separate, manual run.
     const matchups = await computeMatchups({ scope: 'week' });
 
-    // Results first would be wrong: a game that finished this week must be
-    // graded against the prediction already stored for it, then locked.
     const results = await attachResults();
 
-    // Last, so a failure here cannot cost the week's real work, and so nothing
-    // downstream is still reading the rows being removed. The weekly tables are
-    // the only ones that grow without bound; trimming them on the same schedule
-    // that fills them is what keeps the storage cap from arriving as a surprise
-    // mid-ingest write failure.
     const pruned = await pruneHistory();
 
     const detail = {

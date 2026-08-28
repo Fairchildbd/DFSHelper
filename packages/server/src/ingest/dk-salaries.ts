@@ -1,33 +1,8 @@
-/**
- * DraftKings salary import.
- *
- * Salaries are the one input in this project that cannot be derived, scraped
- * honestly, or inferred from football: DraftKings sets them, and the contest
- * lobby's own CSV export is the authoritative copy. So this is a file importer
- * rather than a downloader — you click "Export to CSV" on the draft screen and
- * point this at the file.
- *
- * The export looks like:
- *
- *   Position,Name + ID,Name,ID,Roster Position,Salary,Game Info,TeamAbbrev,AvgPointsPerGame
- *   QB,Patrick Mahomes (12345),Patrick Mahomes,12345,QB,7800,DEN@KC 09/13/2026 01:00PM ET,KC,22.4
- *
- * A showdown export is the same shape with two rows per player — one CPT at
- * 1.5x salary, one FLEX at the base price — which is why `roster_position` is
- * part of the key rather than a detail.
- */
 
 import { createReadStream } from 'node:fs';
 import { parse } from 'csv-parse';
 import { insertBatched, sql } from '../db.ts';
 
-/**
- * DraftKings abbreviations that disagree with nflverse.
- *
- * Only the Rams differ today, but the list exists because this is exactly the
- * kind of mismatch that silently drops a team's whole slate: an unmatched
- * abbreviation produces no error, just a pool with sixteen fewer players.
- */
 const TEAM_ALIASES: Record<string, string> = {
   LAR: 'LA',
   JAC: 'JAX',
@@ -56,7 +31,6 @@ interface RawRow {
 
 export interface DkImportOptions {
   file: string;
-  /** Overrides the season and week inferred from the schedule. */
   season?: number;
   week?: number;
 }
@@ -71,7 +45,6 @@ export interface DkImportResult {
   games: number;
 }
 
-/** `DEN@KC 09/13/2026 01:00PM ET` → the two teams and the kickoff date. */
 function parseGameInfo(raw: string | undefined): { away: string; home: string; date: string | null } | null {
   if (!raw) return null;
   const match = /^([A-Za-z]{2,3})@([A-Za-z]{2,3})\s+(\d{2})\/(\d{2})\/(\d{4})/.exec(raw.trim());
@@ -92,15 +65,9 @@ async function readRows(file: string): Promise<RawRow[]> {
   return rows;
 }
 
-/**
- * Match a DraftKings name to a gsis_id.
- *
- * Keyed on team plus a stripped name, because DraftKings writes "Marvin
- * Harrison Jr." where nflverse writes "Marvin Harrison" about as often as the
- * reverse, and suffixes and punctuation are the whole difference in most
- * failures. Team narrows the field to about 50 people, which makes a loose name
- * match safe in a way it would never be league-wide.
- */
+// "Marvin Harrison Jr." -> "marvinharrison"
+// "Robert Griffin III"  -> "robertgriffin"
+// "Odell Beckham Jr."   -> "odellbeckham"
 function nameKey(name: string): string {
   return name
     .toLowerCase()
@@ -118,8 +85,6 @@ export async function importDkSalaries(opts: DkImportOptions): Promise<DkImportR
     ? 'showdown'
     : 'classic';
 
-  // The slate is identified by the games it contains rather than by a flag, so
-  // an export dropped in without arguments still lands in the right week.
   const infos = raw.map((r) => parseGameInfo(r['Game Info'])).filter((g) => g != null);
   if (infos.length === 0) throw new Error('No parseable Game Info column — is this a DraftKings export?');
 
@@ -164,9 +129,6 @@ export async function importDkSalaries(opts: DkImportOptions): Promise<DkImportR
   const byTeamName = new Map<string, string>();
   for (const r of roster) byTeamName.set(`${r.team}|${nameKey(r.display_name)}`, r.gsis_id);
 
-  // A player whose name matches exactly one person league-wide is safe to link
-  // even when his listed team disagrees, which happens every week in September
-  // as practice squads move.
   const byName = new Map<string, string | null>();
   for (const r of roster) {
     const key = nameKey(r.display_name);
@@ -210,9 +172,6 @@ export async function importDkSalaries(opts: DkImportOptions): Promise<DkImportR
     })
     .filter((r) => r != null);
 
-  // Replacing rather than merging: a re-export mid-week is DraftKings changing
-  // its mind about a price, and a stale row beside a fresh one would let the
-  // optimizer spend money that no longer exists.
   await sql`
     DELETE FROM dk_salaries
     WHERE season = ${season} AND week = ${week} AND contest = ${contest}
@@ -229,8 +188,6 @@ export async function importDkSalaries(opts: DkImportOptions): Promise<DkImportR
     games: new Set(rows.map((r) => r.game_id).filter(Boolean)).size,
   };
 }
-
-// ---------------------------------------------------------------------------
 
 function flag(name: string): string | undefined {
   const index = process.argv.indexOf(`--${name}`);

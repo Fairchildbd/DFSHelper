@@ -1,28 +1,6 @@
-/**
- * DraftKings contest rules, scoring, and lineup construction.
- *
- * Everything above this file answers "where is the mismatch". This file answers
- * the only question a DFS player actually acts on: which nine names go in the
- * box, given that the good ones cost money and the box has a budget.
- *
- * Pure like the rest of the shared layer. Salaries, projections and player
- * identity arrive as plain numbers from the server; nothing here reaches for a
- * database or knows a season exists.
- */
 
 import { clamp } from './stats.js';
 
-// ---------------------------------------------------------------------------
-// Scoring
-// ---------------------------------------------------------------------------
-
-/**
- * A player's stat line, in the shape the weekly feed already carries.
- *
- * Every field optional and treated as zero when absent: a quarterback has no
- * receptions, and a projection built from partial data should score what it
- * knows rather than refuse.
- */
 export interface StatLine {
   passing_yards?: number | null;
   passing_tds?: number | null;
@@ -39,16 +17,6 @@ export interface StatLine {
 
 const n = (v: number | null | undefined): number => (v == null || !Number.isFinite(v) ? 0 : v);
 
-/**
- * DraftKings NFL scoring, which is full-PPR *plus bonuses*.
- *
- * The bonuses are the part that separates DK from every other format and the
- * part a naive PPR projection gets wrong: three points for 100 rushing or
- * receiving yards, three for 300 passing. They are worth about as much as a
- * touchdown-and-a-half of receiving yardage and they land on exactly the
- * players a mismatch model likes — high-volume receivers in good spots — so
- * scoring them separately is not a rounding detail.
- */
 export const DK_SCORING = {
   passYard: 0.04,
   passTd: 4,
@@ -66,7 +34,6 @@ export const DK_SCORING = {
   twoPoint: 2,
 } as const;
 
-/** DK points for one offensive stat line. */
 export function dkPoints(line: StatLine): number {
   const passYards = n(line.passing_yards);
   const rushYards = n(line.rushing_yards);
@@ -92,7 +59,6 @@ export function dkPoints(line: StatLine): number {
   return points;
 }
 
-/** What a team defense did in one game. */
 export interface DstLine {
   points_allowed?: number | null;
   sacks?: number | null;
@@ -104,14 +70,6 @@ export interface DstLine {
   blocked_kicks?: number | null;
 }
 
-/**
- * Points-allowed tiers, the dominant term in any DST score.
- *
- * Listed high-to-low and read as "the first tier this game falls into", which
- * keeps the boundaries in one place. A shutout is worth ten points — more than
- * most starting tight ends score — which is why DST selection is a real
- * decision rather than a leftover slot to fill with whatever money remains.
- */
 export const DST_POINTS_ALLOWED_TIERS: Array<{ max: number; points: number }> = [
   { max: 0, points: 10 },
   { max: 6, points: 7 },
@@ -127,14 +85,6 @@ export function dstPointsAllowedScore(pointsAllowed: number): number {
   return tier ? tier.points : -4;
 }
 
-/**
- * DK points for a team defense.
- *
- * Points allowed is a step function, so a projection that feeds it an average
- * — 21.4 points allowed — lands on a tier boundary and systematically
- * understates the upside. The server projects the tiers probabilistically and
- * uses this for scoring games that actually happened.
- */
 export function dstPoints(line: DstLine): number {
   return (
     dstPointsAllowedScore(n(line.points_allowed)) +
@@ -148,29 +98,16 @@ export function dstPoints(line: DstLine): number {
   );
 }
 
-// ---------------------------------------------------------------------------
-// Contests
-// ---------------------------------------------------------------------------
-
 export type ContestType = 'classic' | 'showdown';
 
-/** Positions DraftKings recognises. DST is a team, not a player. */
 export type DkPosition = 'QB' | 'RB' | 'WR' | 'TE' | 'DST' | 'K';
 
 export interface RosterSlot {
   key: string;
   label: string;
-  /** Positions that may fill it. */
   eligible: DkPosition[];
 }
 
-/**
- * The Sunday Million / Millionaire Maker roster.
- *
- * Nine slots, one flex, and a salary cap that is the whole game: the flex is
- * where a lineup is actually built, because it is the only slot whose position
- * is a decision rather than a requirement.
- */
 export const CLASSIC_SLOTS: RosterSlot[] = [
   { key: 'QB', label: 'QB', eligible: ['QB'] },
   { key: 'RB1', label: 'RB', eligible: ['RB'] },
@@ -183,7 +120,6 @@ export const CLASSIC_SLOTS: RosterSlot[] = [
   { key: 'DST', label: 'DST', eligible: ['DST'] },
 ];
 
-/** Showdown Captain Mode: one captain at 1.5x, five flex, one game. */
 export const SHOWDOWN_SLOTS: RosterSlot[] = [
   { key: 'CPT', label: 'CPT', eligible: ['QB', 'RB', 'WR', 'TE', 'DST', 'K'] },
   ...Array.from({ length: 5 }, (_, i) => ({
@@ -193,161 +129,137 @@ export const SHOWDOWN_SLOTS: RosterSlot[] = [
   })),
 ];
 
-/** Every DraftKings contest is capped at fifty thousand. */
 export const SALARY_CAP = 50000;
 
-/** The captain slot costs half again as much and scores half again as much. */
 export const CAPTAIN_MULTIPLIER = 1.5;
 
-/**
- * Classic lineups must span at least two games.
- *
- * DraftKings enforces this to stop a lineup being a bet on one game script.
- * It almost never binds — nine players across the position requirements rarely
- * come from one game — but "almost never" is not a rule, and a lineup the site
- * rejects is worse than a slightly weaker one it accepts.
- */
 export const MIN_CLASSIC_GAMES = 2;
 
-/** Showdown lineups must include a player from each side. Same reasoning. */
 export const MIN_SHOWDOWN_TEAMS = 2;
-
-// ---------------------------------------------------------------------------
-// Optimizer
-// ---------------------------------------------------------------------------
 
 export interface LineupCandidate {
   id: string;
   name: string;
   position: DkPosition;
   team: string;
-  /** The game this player's team is in, for the multi-game rule. */
   gameId: string;
   salary: number;
-  /** The matchup grade this seat is being bought for, 0-100. Null if ungraded. */
   matchupScore: number | null;
-  /** What the search maximizes: `matchupValue` of the grade above. */
   value: number;
 }
 
-/** The number the search maximizes for one candidate. */
 export function candidateValue(c: LineupCandidate): number {
   return c.value;
 }
 
 export interface LineupPick extends LineupCandidate {
   slot: string;
-  /** 1.5 for a showdown captain, 1 otherwise. */
   multiplier: number;
-  /** Seat value after the multiplier. */
   weight: number;
-  /** Salary after the multiplier. */
   cost: number;
 }
 
 export interface Lineup {
   picks: LineupPick[];
   salary: number;
-  /** Sum of seat values. Comparable between lineups, not to a points total. */
   value: number;
-  /** Mean matchup grade across the nine seats, which is the headline number. */
   averageGrade: number;
-  /** Cap minus salary. Money left unspent is matchup edge left unbought. */
   remaining: number;
 }
 
-/** Salaries are always multiples of 100, so the cap is 500 buckets wide. */
 const BUCKET = 100;
 
 interface Combo {
   salary: number;
-  /** Objective total — what `place` compares. */
   value: number;
   ids: string[];
 }
 
-/**
- * Best combination found at each salary level, indexed by hundred-dollar bucket.
- *
- * Every step of the search compresses to this shape, which is what keeps an
- * exhaustive optimizer tractable: two hundred thousand WR quartets collapse to
- * at most five hundred entries, one per price point, and everything downstream
- * only ever sees the survivors.
- */
-type Table = Array<Combo | null>;
+const SPANS_TWO_GAMES = '*';
+const NO_PLAYERS = '';
+
+type GameSpread = string;
+type Bucket = Map<GameSpread, Combo>;
+type Table = Bucket[];
+
+function spreadOfBoth(a: GameSpread, b: GameSpread): GameSpread {
+  if (a === NO_PLAYERS) return b;
+  if (b === NO_PLAYERS) return a;
+  if (a === SPANS_TWO_GAMES || b === SPANS_TWO_GAMES) return SPANS_TWO_GAMES;
+  return a === b ? a : SPANS_TWO_GAMES;
+}
 
 function emptyTable(): Table {
-  return new Array<Combo | null>(SALARY_CAP / BUCKET + 1).fill(null);
+  return Array.from({ length: SALARY_CAP / BUCKET + 1 }, () => new Map<string, Combo>());
 }
 
-function place(table: Table, combo: Combo): void {
+function place(table: Table, combo: Combo, key: string): void {
   if (combo.salary > SALARY_CAP) return;
-  const bucket = Math.floor(combo.salary / BUCKET);
-  const existing = table[bucket];
-  if (!existing || combo.value > existing.value) table[bucket] = combo;
+  const bucket = table[Math.floor(combo.salary / BUCKET)]!;
+  const existing = bucket.get(key);
+  if (!existing || combo.value > existing.value) bucket.set(key, combo);
 }
 
-/** Every way to pick `count` players from `pool`, compressed by price. */
 function combinationsTable(pool: LineupCandidate[], count: number): Table {
   const table = emptyTable();
   const chosen: LineupCandidate[] = [];
 
-  const walk = (start: number, salary: number, value: number): void => {
+  const walk = (start: number, salary: number, value: number, key: string): void => {
     if (chosen.length === count) {
-      place(table, { salary, value, ids: chosen.map((c) => c.id) });
+      place(table, { salary, value, ids: chosen.map((c) => c.id) }, key);
       return;
     }
     for (let i = start; i < pool.length; i++) {
-      // Cannot finish the group within the cap from here, and the pool is
-      // sorted by salary ascending, so nothing later can either.
       const need = count - chosen.length;
       if (salary + pool[i]!.salary * need > SALARY_CAP) break;
       chosen.push(pool[i]!);
-      walk(i + 1, salary + pool[i]!.salary, value + candidateValue(pool[i]!));
+      walk(i + 1, salary + pool[i]!.salary, value + candidateValue(pool[i]!), spreadOfBoth(key, pool[i]!.gameId));
       chosen.pop();
     }
   };
 
-  walk(0, 0, 0);
+  walk(0, 0, 0, NO_PLAYERS);
   return table;
 }
 
-/** Merge two independent groups, keeping the best lineup at each price. */
 function merge(a: Table, b: Table): Table {
   const out = emptyTable();
   for (let i = 0; i < a.length; i++) {
-    const left = a[i];
-    if (!left) continue;
+    if (a[i]!.size === 0) continue;
     for (let j = 0; j < b.length - i; j++) {
-      const right = b[j];
-      if (!right) continue;
-      place(out, {
-        salary: left.salary + right.salary,
-        value: left.value + right.value,
-        ids: [...left.ids, ...right.ids],
-      });
+      if (b[j]!.size === 0) continue;
+      for (const [ka, left] of a[i]!) {
+        for (const [kb, right] of b[j]!) {
+          place(
+            out,
+            {
+              salary: left.salary + right.salary,
+              value: left.value + right.value,
+              ids: [...left.ids, ...right.ids],
+            },
+            spreadOfBoth(ka, kb),
+          );
+        }
+      }
     }
   }
   return out;
 }
 
-function bestOf(table: Table): Combo | null {
+function bestLegalOf(table: Table): Combo | null {
+  if (MIN_CLASSIC_GAMES !== 2) {
+    throw new Error(
+      'bestLegalOf reads the SPANS_TWO_GAMES spread, which only models MIN_CLASSIC_GAMES === 2',
+    );
+  }
   let best: Combo | null = null;
-  for (const combo of table) {
+  for (const bucket of table) {
+    const combo = bucket.get(SPANS_TWO_GAMES);
     if (combo && (!best || combo.value > best.value)) best = combo;
   }
   return best;
 }
 
-/**
- * How many players per position survive to the search.
- *
- * Pruning is what makes this exact-in-practice rather than merely fast: the
- * pool is cut by projection *and* by projection per dollar, because a cheap
- * player who is nobody's best play can still be the only way to afford the
- * three who are. Cutting on projection alone produces lineups that cannot fit
- * under the cap and then blames the cap.
- */
 export const POOL_LIMITS: Record<string, number> = {
   QB: 14,
   RB: 26,
@@ -376,15 +288,6 @@ function prune(pool: LineupCandidate[], limit: number): LineupCandidate[] {
   return [...keep.values()].sort((a, b) => a.salary - b.salary);
 }
 
-/**
- * The three shapes a classic lineup can take.
- *
- * The flex is not searched as a slot. It is searched as three separate rosters
- * — an extra back, an extra receiver, an extra tight end — because that turns
- * one problem with an overlapping pool into three problems with disjoint pools,
- * and disjoint pools are what let each position be enumerated independently
- * without ever picking the same player twice.
- */
 const FLEX_SHAPES: Array<Record<string, number>> = [
   { QB: 1, RB: 3, WR: 3, TE: 1, DST: 1 },
   { QB: 1, RB: 2, WR: 4, TE: 1, DST: 1 },
@@ -392,19 +295,10 @@ const FLEX_SHAPES: Array<Record<string, number>> = [
 ];
 
 export interface OptimizeOptions {
-  /** Players who must appear. Used by the multi-game repair pass. */
   locks?: string[];
-  /** Players to leave out entirely — injured, or already used in another entry. */
   excludes?: string[];
 }
 
-/**
- * Build the highest-projecting legal classic lineup.
- *
- * Returns null when the pool cannot fill the roster under the cap, which is a
- * real state early in a week: a slate whose salaries have not been imported has
- * no pool at all, and saying so beats returning eight players and a hole.
- */
 export function optimizeClassic(
   candidates: LineupCandidate[],
   options: OptimizeOptions = {},
@@ -414,6 +308,7 @@ export function optimizeClassic(
   const usable = candidates.filter((c) => !excluded.has(c.id) && c.salary > 0);
 
   const byPosition = (pos: DkPosition) => usable.filter((c) => c.position === pos);
+  const byId = new Map(usable.map((c) => [c.id, c]));
 
   let best: { combo: Combo; shape: Record<string, number> } | null = null;
 
@@ -423,8 +318,6 @@ export function optimizeClassic(
     for (const [pos, count] of Object.entries(shape)) {
       const pool = byPosition(pos as DkPosition);
       const lockedHere = pool.filter((c) => locked.has(c.id));
-      // A locked player is not a candidate, he is a fixed cost: he takes one of
-      // the slots and the rest of the group is chosen around him.
       const free = prune(
         pool.filter((c) => !locked.has(c.id)),
         POOL_LIMITS[pos] ?? 20,
@@ -439,14 +332,20 @@ export function optimizeClassic(
           value: lockedHere.reduce((acc, c) => acc + candidateValue(c), 0),
           ids: lockedHere.map((c) => c.id),
         };
+        const fixedKey = lockedHere.reduce((k, c) => spreadOfBoth(k, c.gameId), NO_PLAYERS);
         const shifted = emptyTable();
-        for (const combo of group) {
-          if (!combo) continue;
-          place(shifted, {
-            salary: combo.salary + fixed.salary,
-            value: combo.value + fixed.value,
-            ids: [...combo.ids, ...fixed.ids],
-          });
+        for (const bucket of group) {
+          for (const [key, combo] of bucket) {
+            place(
+              shifted,
+              {
+                salary: combo.salary + fixed.salary,
+                value: combo.value + fixed.value,
+                ids: [...combo.ids, ...fixed.ids],
+              },
+              spreadOfBoth(key, fixedKey),
+            );
+          }
         }
         table = table ? merge(table, shifted) : shifted;
       } else {
@@ -455,7 +354,7 @@ export function optimizeClassic(
     }
 
     if (!table) continue;
-    const combo = bestOf(table);
+    const combo = bestLegalOf(table);
     if (combo && (!best || combo.value > best.combo.value)) {
       best = { combo, shape };
     }
@@ -463,19 +362,10 @@ export function optimizeClassic(
 
   if (!best) return null;
 
-  const byId = new Map(usable.map((c) => [c.id, c]));
   const picked = best.combo.ids.map((id) => byId.get(id)!).filter(Boolean);
   return assign(picked, CLASSIC_SLOTS);
 }
 
-/**
- * Seat a set of players in roster slots.
- *
- * The optimizer works in position counts, which say nothing about which back is
- * RB1 and which is the flex. Filling the tightest slots first — the ones with
- * one eligible position — leaves the flex to whoever is left, which is exactly
- * what the flex is for.
- */
 function assign(players: LineupCandidate[], slots: RosterSlot[]): Lineup | null {
   const remaining = [...players];
   const picks: LineupPick[] = [];
@@ -502,8 +392,6 @@ function assign(players: LineupCandidate[], slots: RosterSlot[]): Lineup | null 
   return summarizeLineup(picks);
 }
 
-/** Totals every lineup reports, computed one way so they cannot disagree. */
-/** Roster into lineup: what it cost, what it is worth, what it grades. */
 export function summarizeLineup(picks: LineupPick[]): Lineup {
   const salary = picks.reduce((acc, p) => acc + p.cost, 0);
   const graded = picks.filter((p) => p.matchupScore != null);
@@ -520,20 +408,10 @@ export function summarizeLineup(picks: LineupPick[]): Lineup {
   };
 }
 
-/** How many distinct games a lineup draws from. */
 export function gamesUsed(lineup: Lineup): number {
   return new Set(lineup.picks.map((p) => p.gameId)).size;
 }
 
-/**
- * Showdown Captain Mode, for one game.
- *
- * Searched as a captain choice crossed with a five-man knapsack rather than as
- * six free slots, because the captain is the whole decision: he costs 1.5x and
- * scores 1.5x, so he is worth locking to the player whose *projection* is most
- * worth multiplying, not the one with the best price. Enumerating captains
- * outright is cheap — a showdown pool is one game, forty players at most.
- */
 export function optimizeShowdown(
   candidates: LineupCandidate[],
   options: OptimizeOptions = {},
@@ -552,7 +430,6 @@ export function optimizeShowdown(
     const flex = bestFlex(rest, 5, SALARY_CAP - captainCost);
     if (!flex) continue;
 
-    // Both teams must be represented, and the captain counts toward that.
     const teams = new Set([captain.team, ...flex.map((f) => f.team)]);
     if (teams.size < MIN_SHOWDOWN_TEAMS) continue;
 
@@ -584,21 +461,6 @@ export function optimizeShowdown(
   return summarizeLineup(picks);
 }
 
-/**
- * Best `count` players within `budget`, by dynamic programming over price.
- *
- * Exact, and linear in the pool rather than combinatorial: the state is how
- * many players are seated and what has been spent, which is all that matters
- * about a partial showdown lineup.
- *
- * Each state carries its own roster rather than a back-pointer. Back-pointers
- * are the usual trick and they are wrong here: a predecessor state can be
- * improved by a later player after a pointer into it was written, so walking
- * the pointers can rebuild a roster worth less than the value the table claims.
- * Six slots against five hundred price points is three thousand states, so
- * carrying the rosters costs nothing worth the risk of reporting a projection
- * the lineup does not actually have.
- */
 function bestFlex(
   pool: LineupCandidate[],
   count: number,
@@ -616,7 +478,6 @@ function bestFlex(
   for (const player of pool) {
     const cost = Math.floor(player.salary / BUCKET);
     if (cost >= size) continue;
-    // Descending in both dimensions so each player is seated at most once.
     for (let k = count - 1; k >= 0; k--) {
       for (let b = size - 1 - cost; b >= 0; b--) {
         const base = dp[k]![b];
@@ -637,29 +498,15 @@ function bestFlex(
   return best ? best.picks : null;
 }
 
-// ---------------------------------------------------------------------------
-// Strategies
-// ---------------------------------------------------------------------------
-
 export type StrategyKey = 'mismatch';
 
 export interface StrategyDefinition {
   key: StrategyKey;
   label: string;
-  /** One line under the button. */
   tagline: string;
   description: string;
 }
 
-/**
- * How a lineup gets built.
- *
- * One strategy, because there is only one thing this app knows that a salary
- * file does not: which units are mismatched this week. Ranking players by
- * projected points is what every optimizer on the internet already does, it is
- * a restatement of DraftKings' own pricing, and it produced lineups that
- * ignored the model underneath them. The matchup grade drives every seat.
- */
 export const STRATEGIES: StrategyDefinition[] = [
   {
     key: 'mismatch',
@@ -673,34 +520,16 @@ export const STRATEGIES: StrategyDefinition[] = [
   },
 ];
 
-/** Positions that can be stacked with a quarterback. */
 const STACK_PARTNERS: DkPosition[] = ['WR', 'TE'];
 
-/** Positions worth bringing back from the other side of a stacked game. */
 const BRING_BACK: DkPosition[] = ['WR', 'TE', 'RB'];
 
 export interface StackOptions {
-  /** The game to stack. */
   gameId: string;
-  /** Pass catchers per quarterback to try. */
   partners?: number;
-  /** Opposing players to try as the bring-back. */
   bringBacks?: number;
 }
 
-/**
- * Every stack worth trying in one game, best first.
- *
- * A stack is three players: the quarterback, someone he throws to, and someone
- * on the other team. The first two are the correlation — a quarterback's
- * touchdown is his receiver's touchdown, so owning both doubles the payoff of
- * being right about the game. The third is the insurance: the games that go
- * over their total go over because *both* offenses moved, and a lineup holding
- * only one side of a shootout leaves half of it on the table.
- *
- * Returned as id triples rather than lineups because each one is then handed to
- * the optimizer as locks, which fills the other six slots around it.
- */
 export function stackCombinations(
   candidates: LineupCandidate[],
   options: StackOptions,
@@ -738,23 +567,10 @@ export function stackCombinations(
   return stacks.sort((a, b) => b.value - a.value).map((s) => s.ids);
 }
 
-/** Players in a lineup who came from the stacked game. */
 export function stackSize(lineup: Lineup, gameId: string): number {
   return lineup.picks.filter((p) => p.gameId === gameId).length;
 }
 
-// ---------------------------------------------------------------------------
-// What a seat is worth
-// ---------------------------------------------------------------------------
-
-/**
- * How much a matchup grade is worth at each position.
- *
- * Not a points projection — a correction for the fact that the same grade buys
- * different scoring at different positions. A tight end graded 80 and a
- * receiver graded 80 are both in excellent spots, but the receiver's spot is
- * worth more fantasy points, and without this the flex fills with tight ends.
- */
 export const POSITION_WEIGHT: Record<DkPosition, number> = {
   QB: 1,
   RB: 1,
@@ -764,29 +580,10 @@ export const POSITION_WEIGHT: Record<DkPosition, number> = {
   K: 0.4,
 };
 
-/**
- * Matchup grade below which a player is treated as filler.
- *
- * A player the model never graded — a fourth receiver, a name the roster could
- * not be matched to — is not average, he is unknown, and an optimizer that
- * treats unknown as average will fill a lineup with unknowns because they are
- * cheap. Scored below average on purpose, so he only gets a seat when the
- * salary genuinely has nowhere better to go.
- */
 export const UNGRADED_SCORE = 35;
 
-/**
- * Curve applied to a matchup grade before it is spent against salary.
- *
- * Convex, so the distance from 50 to 80 counts for more than the distance from
- * 20 to 50. A lineup is nine seats and the slate has hundreds of players in
- * ordinary spots; what wins a tournament is concentrating the cap in the few
- * genuinely lopsided ones rather than buying a roster of slightly-above-average
- * grades.
- */
 export const GRADE_EXPONENT = 1.5;
 
-/** What one seat is worth: the matchup grade, curved and position-weighted. */
 export function matchupValue(position: DkPosition, score: number | null): number {
   const grade = score ?? UNGRADED_SCORE;
   return (POSITION_WEIGHT[position] ?? 1) * (Math.max(grade, 1) / 50) ** GRADE_EXPONENT;

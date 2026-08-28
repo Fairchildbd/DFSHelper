@@ -1,18 +1,31 @@
+import { memo } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import type { MatchupSummary } from '../api';
 import { describeEdge, edgeColor, formatKickoff, shootoutColor } from '../matchupFormat';
 import { getPixels, theme } from '../theme';
 
-/**
- * One game in a matchup list.
- *
- * Renders in two modes off the same row. Before kickoff it is a forecast: the
- * mismatch score and the headline edge. Afterwards it also carries the final
- * score and how many of the ten highest-graded players actually finished in the
- * game's real top ten — which is the only honest way to show a prediction next
- * to what happened.
- */
-export function MatchupRow({
+const TEAMS_LINE = getPixels(22);
+const KICKOFF_LINE = getPixels(16);
+const EDGE_LINE = getPixels(17.5);
+const META_LINE = getPixels(16);
+const BAR_HEIGHT = 4;
+const BAR_MARGIN = 3;
+const EDGE_MARGIN = 2;
+const ROW_GAP = 4;
+const ROW_PAD_V = 14;
+
+export const MATCHUP_ROW_HEIGHT =
+  ROW_PAD_V * 2 +
+  TEAMS_LINE +
+  KICKOFF_LINE +
+  BAR_HEIGHT +
+  BAR_MARGIN +
+  EDGE_LINE * 2 +
+  EDGE_MARGIN +
+  META_LINE +
+  ROW_GAP * 4;
+
+export const MatchupRow = memo(function MatchupRow({
   game,
   rank,
   onPress,
@@ -25,11 +38,6 @@ export function MatchupRow({
   const isFinal = game.home_score != null && game.away_score != null;
   const gap = Number(game.mismatch_score);
 
-  // The list is grouped by scoring shape, so the row leads with the score that
-  // decided which section it landed in. A row with no shootout score — nothing
-  // gradeable, or a row predating the column — falls back to the talent gap and
-  // the caption says which number is on screen, rather than showing a bar built
-  // from NaN.
   const shootout = game.shootout_score == null ? null : Number(game.shootout_score);
   const score = shootout ?? gap;
   const color = shootoutColor(score);
@@ -96,7 +104,7 @@ export function MatchupRow({
       </View>
     </Pressable>
   );
-}
+});
 
 function lastName(name: string): string {
   const parts = name.trim().split(' ');
@@ -105,8 +113,9 @@ function lastName(name: string): string {
 
 const styles = StyleSheet.create({
   row: {
+    height: MATCHUP_ROW_HEIGHT,
     flexDirection: 'row',
-    paddingVertical: 14,
+    paddingVertical: ROW_PAD_V,
     paddingHorizontal: 16,
     gap: 12,
     borderBottomWidth: StyleSheet.hairlineWidth,
@@ -115,9 +124,15 @@ const styles = StyleSheet.create({
   rowPressed: { backgroundColor: theme.surfaceAlt },
   rankCol: { width: 26, paddingTop: 2 },
   rank: { color: theme.textFaint, fontSize: getPixels(15), fontWeight: '700' },
-  mainCol: { flex: 1, gap: 4 },
+  mainCol: { flex: 1, gap: ROW_GAP },
   teamLine: { flexDirection: 'row', alignItems: 'baseline', gap: 10 },
-  teams: { color: theme.text, fontSize: getPixels(17), fontWeight: '700', letterSpacing: 0.3 },
+  teams: {
+    color: theme.text,
+    fontSize: getPixels(17),
+    lineHeight: TEAMS_LINE,
+    fontWeight: '700',
+    letterSpacing: 0.3,
+  },
   at: { color: theme.textFaint, fontWeight: '500' },
   finalScore: {
     color: theme.textDim,
@@ -125,17 +140,23 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     fontVariant: ['tabular-nums'],
   },
-  kickoff: { color: theme.textFaint, fontSize: getPixels(11) },
+  kickoff: { color: theme.textFaint, fontSize: getPixels(11), lineHeight: KICKOFF_LINE },
   barTrack: {
-    height: 4,
+    height: BAR_HEIGHT,
     borderRadius: 2,
     backgroundColor: theme.surfaceAlt,
     overflow: 'hidden',
-    marginTop: 3,
+    marginTop: BAR_MARGIN,
   },
-  barFill: { height: 4, borderRadius: 2 },
-  edgeLine: { fontSize: getPixels(12.5), fontWeight: '600', marginTop: 2 },
-  meta: { color: theme.textDim, fontSize: getPixels(11) },
+  barFill: { height: BAR_HEIGHT, borderRadius: 2 },
+  edgeLine: {
+    fontSize: getPixels(12.5),
+    lineHeight: EDGE_LINE,
+    height: EDGE_LINE * 2,
+    fontWeight: '600',
+    marginTop: EDGE_MARGIN,
+  },
+  meta: { color: theme.textDim, fontSize: getPixels(11), lineHeight: META_LINE },
   scoreCol: { alignItems: 'flex-end', width: 58 },
   score: { fontSize: getPixels(24), fontWeight: '800', fontVariant: ['tabular-nums'] },
   scoreCaption: { color: theme.textFaint, fontSize: getPixels(9), fontWeight: '600' },

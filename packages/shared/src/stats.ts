@@ -1,10 +1,4 @@
-/** Small statistics helpers. No dependencies — this runs on-device too. */
 
-/**
- * Cumulative distribution function for the standard normal, via the
- * Abramowitz & Stegun 7.1.26 approximation of erf. Accurate to ~1.5e-7, which
- * is far tighter than the precision of any combine stopwatch.
- */
 export function normalCdf(z: number): number {
   return 0.5 * (1 + erf(z / Math.SQRT2));
 }
@@ -30,7 +24,6 @@ export function mean(values: number[]): number {
   return values.reduce((a, b) => a + b, 0) / values.length;
 }
 
-/** Sample standard deviation (n-1 denominator). */
 export function stdDev(values: number[]): number {
   if (values.length < 2) return 0;
   const m = mean(values);

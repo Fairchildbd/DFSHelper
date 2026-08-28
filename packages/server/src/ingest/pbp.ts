@@ -1,22 +1,3 @@
-/**
- * Coaching tendency ingest from play-by-play.
- *
- * A season of play-by-play is ~50k rows across 372 columns, so nothing is ever
- * materialized: each play is folded into a set of running counters keyed by
- * coach and by team, and the file is never held in memory.
- *
- * Two decisions shape everything here.
- *
- * **Neutral game state only.** Tendencies are filtered to win probability
- * between 0.2 and 0.8. A team down 21 in the fourth quarter throws on every
- * snap regardless of what its coach believes in, and letting those plays into
- * the sample measures the scoreboard rather than the play-caller.
- *
- * **Keyed on coach as well as team.** Coaches move — the 2026 season opened
- * with five staffs new to their franchise — so a team-keyed profile can
- * describe someone who is no longer there. Both are collected; the resolution
- * order lives in `resolveTendencies` in @dfs/shared.
- */
 
 import { FTN_FIRST_SEASON, MissingSeasonError, SOURCES, int, num, str, streamCsv } from '../nflverse.ts';
 import { insertBatched, sql } from '../db.ts';
@@ -25,17 +6,9 @@ interface LoadOptions {
   force?: boolean;
 }
 
-/**
- * Running counters for one entity on one side of the ball.
- *
- * Every field is a raw count or sum. Ratios are formed only at the end, so a
- * denominator of zero can be detected and the metric omitted rather than
- * silently recorded as a real zero.
- */
 interface Acc {
   games: Set<string>;
 
-  // --- offense ---
   plays: number;
   proeSum: number;
   proeN: number;
@@ -56,7 +29,6 @@ interface Acc {
   targetsTE: number;
   targetsRB: number;
 
-  // --- offense, from FTN charting ---
   ftnSnaps: number;
   motion: number;
   rpo: number;
@@ -64,7 +36,6 @@ interface Acc {
   playAction: number;
   screen: number;
 
-  // --- defense ---
   defPlays: number;
   defPass: number;
   defDropbacks: number;
@@ -76,7 +47,6 @@ interface Acc {
   explosive: number;
   explosiveN: number;
 
-  // --- defense, from FTN charting ---
   ftnDefDropbacks: number;
   blitz: number;
   ftnDefSnaps: number;
@@ -99,7 +69,6 @@ function emptyAcc(): Acc {
   };
 }
 
-/** Two parallel books: one keyed by coach, one by franchise. */
 class Book {
   private readonly accs = new Map<string, Acc>();
 
@@ -117,22 +86,13 @@ class Book {
   }
 }
 
-/** Win probability band that counts as neutral game state. */
 const NEUTRAL_WP_LOW = 0.2;
 const NEUTRAL_WP_HIGH = 0.8;
 
-/** Air yards at or beyond this are a deep shot. */
 const DEEP_AIR_YARDS = 15;
 
-/** Yards gained at or beyond this are an explosive play. */
 const EXPLOSIVE_YARDS = 20;
 
-/**
- * Largest gap between snaps that still counts toward pace.
- *
- * Anything longer is a timeout, a change of possession, a measurement, or a
- * TV break — not the offense operating.
- */
 const MAX_PACE_GAP = 60;
 
 interface PlayContext {
@@ -142,17 +102,10 @@ interface PlayContext {
   defteam: string;
 }
 
-/**
- * Aggregate coaching tendencies over a set of seasons.
- *
- * Returns the number of (entity, side, metric) rows written.
- */
 export async function loadTendencies(
   seasons: number[],
   opts: LoadOptions = {},
 ): Promise<{ coaches: number; teams: number; metrics: number }> {
-  // Coach identity per game side. Play-by-play names teams, not staffs, so
-  // this map is the only bridge between a play and who called it.
   const coachRows = await sql<
     { game_id: string; home_team: string; away_team: string; home_coach: string | null; away_coach: string | null }[]
   >`
@@ -165,8 +118,6 @@ export async function loadTendencies(
     if (g.away_coach) coachByGameTeam.set(`${g.game_id}|${g.away_team}`, g.away_coach);
   }
 
-  // Receiver position, for the target-distribution metrics. Play-by-play gives
-  // a receiver id and nothing else about him.
   const positionRows = await sql<{ gsis_id: string; position: string | null }[]>`
     SELECT gsis_id, position FROM players WHERE position IS NOT NULL
   `;
@@ -176,14 +127,10 @@ export async function loadTendencies(
   const teamBook = new Book();
 
   for (const season of seasons) {
-    // Play context for this season, so FTN charting can be folded into the
-    // same counters. Cleared before the next season so only one season of
-    // play keys is ever resident.
     const playIndex = new Map<string, PlayContext>();
     let plays = 0;
 
     try {
-      // --- pass one: play-by-play -------------------------------------------
       let lastGame: string | null = null;
       let lastDrive: number | null = null;
       let lastSeconds: number | null = null;
@@ -197,7 +144,6 @@ export async function loadTendencies(
         const playType = str(r.play_type);
         if (!gameId || !posteam || !defteam) continue;
 
-        // Kneels, spikes, deleted and aborted plays are not play-calls.
         if (playType !== 'pass' && playType !== 'run') continue;
         if (int(r.qb_kneel) === 1 || int(r.qb_spike) === 1) continue;
         if (int(r.play_deleted) === 1 || int(r.aborted_play) === 1) continue;
@@ -215,9 +161,6 @@ export async function loadTendencies(
         const wp = num(r.wp);
         const neutral = wp != null && wp >= NEUTRAL_WP_LOW && wp <= NEUTRAL_WP_HIGH;
 
-        // Pace is measured regardless of game state: a two-minute drill is
-        // still this offense operating, and excluding it would understate
-        // every team that plays from behind.
         const seconds = num(r.game_seconds_remaining);
         const drive = int(r.fixed_drive);
         const sameSeries = gameId === lastGame && drive === lastDrive;
@@ -329,7 +272,6 @@ export async function loadTendencies(
 
     console.log(`  ${season}: ${plays.toLocaleString()} scrimmage plays`);
 
-    // --- pass two: FTN charting -------------------------------------------
     if (season >= FTN_FIRST_SEASON) {
       let charted = 0;
       try {
@@ -348,7 +290,6 @@ export async function loadTendencies(
           const screen = str(r.is_screen_pass) === 'TRUE' || int(r.is_screen_pass) === 1;
           const blitzers = int(r.n_blitzers);
           const box = int(r.n_defense_box);
-          // A charted dropback is one where the pass-rush count is recorded.
           const rushers = int(r.n_pass_rushers);
           const isDropback = rushers != null && rushers > 0;
 
@@ -372,8 +313,6 @@ export async function loadTendencies(
           defAccs.push(teamBook.get(ctx.defteam));
 
           for (const acc of defAccs) {
-            // A zero box count means the play was not charted, not that the
-            // defense emptied the box.
             if (box != null && box > 0) {
               acc.ftnDefSnaps++;
               if (box <= 6) acc.lightBox++;
@@ -381,7 +320,6 @@ export async function loadTendencies(
             }
             if (isDropback && blitzers != null) {
               acc.ftnDefDropbacks++;
-              // Five or more rushers is a blitz: four is the base rush.
               if (blitzers >= 1 && rushers! >= 5) acc.blitz++;
             }
           }
@@ -398,8 +336,6 @@ export async function loadTendencies(
 
     playIndex.clear();
   }
-
-  // --- derive metrics -------------------------------------------------------
 
   const seasonLabel = seasons.join(',');
   const coachRowsOut: Record<string, unknown>[] = [];
@@ -442,14 +378,6 @@ interface DerivedMetric {
   value: number;
 }
 
-/**
- * Turn raw counters into the published tendency metrics.
- *
- * A metric whose denominator is empty is omitted entirely rather than written
- * as zero. Downstream that reads as "unknown", which is the truth, and the
- * fallback chain can then reach for a team or league value instead of treating
- * a missing sample as a coach who never blitzes.
- */
 function deriveMetrics(acc: Acc): DerivedMetric[] {
   const out: DerivedMetric[] = [];
   const push = (side: 'offense' | 'defense', metric: string, value: number | null) => {
@@ -457,7 +385,6 @@ function deriveMetrics(acc: Acc): DerivedMetric[] {
   };
   const ratio = (n: number, d: number, scale = 100) => (d > 0 ? (n / d) * scale : null);
 
-  // Offense
   push('offense', 'proe', acc.proeN > 0 ? acc.proeSum / acc.proeN : null);
   push('offense', 'pass_rate_early', ratio(acc.earlyPass, acc.earlyPlays));
   push('offense', 'sec_per_play', acc.paceN > 0 ? acc.paceSum / acc.paceN : null);
@@ -474,7 +401,6 @@ function deriveMetrics(acc: Acc): DerivedMetric[] {
   push('offense', 'te_target_share', ratio(acc.targetsTE, acc.targets));
   push('offense', 'rb_target_share', ratio(acc.targetsRB, acc.targets));
 
-  // Defense
   push('defense', 'blitz_rate', ratio(acc.blitz, acc.ftnDefDropbacks));
   push('defense', 'pressure_rate', ratio(acc.defPressure, acc.defDropbacks));
   push('defense', 'light_box_rate', ratio(acc.lightBox, acc.ftnDefSnaps));

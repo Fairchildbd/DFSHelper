@@ -22,13 +22,6 @@ import { MatchupRow } from '../components/MatchupRow';
 import { GAME_SHAPES } from '../matchupFormat';
 import { getPixels, theme } from '../theme';
 
-/**
- * The weekly product: one week of predictions, and the week just finished.
- *
- * Deliberately not a week browser. Only the week now in play is forecast, so
- * there is never a screen full of predictions for games two months out that
- * nobody has checked. The season-wide view lives under Best Ball.
- */
 export function ThisWeekScreen({
   onSelectGame,
   onBuildLineup,
@@ -52,8 +45,6 @@ export function ThisWeekScreen({
       setCurrent(res.current);
       setPrevious(res.previous);
       setError(null);
-      // A missing salary import is not an error — it is the ordinary state of a
-      // week nobody has drafted yet — so it never blocks the matchup list.
       try {
         const res = await fetchSlates();
         setSlates(res.slates);
@@ -172,21 +163,6 @@ export function ThisWeekScreen({
   );
 }
 
-/**
- * The week's games, grouped into sections rather than ranked one to sixteen.
- *
- * The server has already ordered the rows — sections in `order`, and by
- * projected scoring within each — so this walks the list in the order it
- * arrived and starts a new header whenever the shape changes. Grouping by
- * scanning rather than by bucketing keeps one ordering authority: a section
- * cannot silently reorder itself here and disagree with the query that built
- * it.
- *
- * Rank numbering restarts inside each section, because a game's number is only
- * meaningful against the others answering the same description. "Third-best
- * shootout" is a useful thing to know; "ninth on the slate" across four
- * different kinds of game is not.
- */
 function ShapedList({
   games,
   order,
@@ -200,10 +176,6 @@ function ShapedList({
     .map((shape) => ({ shape, games: games.filter((g) => g.game_shape === shape) }))
     .filter((section) => section.games.length > 0);
 
-  // Anything the server could not classify — no gradeable lane, or a row built
-  // before the column existed. Shown rather than dropped, under a header that
-  // says plainly that the model has no read, so a missing game is never
-  // mistaken for a game nobody rated worth playing.
   const unclassified = games.filter(
     (g) => !g.game_shape || !order.includes(g.game_shape),
   );
@@ -245,18 +217,6 @@ function ShapedList({
   );
 }
 
-/**
- * The build button, one per imported multi-game slate.
- *
- * Only offered for slates whose salaries are loaded. An optimizer with no
- * prices is not a degraded feature, it is a wrong answer, so the button is
- * replaced by the one instruction that fixes it rather than shown greyed out.
- *
- * Showdown is deliberately absent. A captain lineup is one game's contest, so
- * its button belongs on that game's page, where the matchup it is built from is
- * on screen — offered up here it would sit above a list of thirteen games while
- * applying to exactly one of them.
- */
 function LineupBar({
   slates,
   strategies,

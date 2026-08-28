@@ -4,16 +4,6 @@ import { API_URL, fetchMatchupMeta, type MatchupMeta } from '../api';
 import { edgeColor, mismatchColor, shootoutColor } from '../matchupFormat';
 import { getPixels, theme } from '../theme';
 
-/**
- * What every number in this app means.
- *
- * The constants quoted here are served from `/matchup-meta` rather than typed
- * into the copy, because an explanation that drifts from the engine it
- * describes is worse than no explanation. The two worked examples re-derive
- * their arithmetic from those same constants for the same reason — if the
- * shape of a formula changes, this screen needs a rewrite, but if only a
- * threshold moves, it follows on its own.
- */
 export function AboutScreen() {
   const [meta, setMeta] = useState<MatchupMeta | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -55,15 +45,11 @@ export function AboutScreen() {
   const m = meta.model;
   const bar = m.edgeThreshold;
 
-  // Illustrative edges, sliced by the served count so the example always shows
-  // exactly as many as actually feed the score.
   const exampleEdges = [84, 78, 67, 64, 49].slice(0, m.topEdges);
   const exampleEdgeScore = Math.sqrt(
     exampleEdges.reduce((acc, e) => acc + e * e, 0) / exampleEdges.length,
   );
 
-  // Same blend the engine uses, on an illustrative high-total, fast-pace game
-  // between two offenses of unequal quality.
   const exampleTotal = 48.5;
   const examplePace = 72;
   const exampleStrongOffense = 74;
@@ -98,7 +84,6 @@ export function AboutScreen() {
         disagree in the offense’s favour — and this app is a way of finding them.
       </Text>
 
-      {/* ---------------------------------------------------------------- */}
 
       <Section
         title="Lanes"
@@ -124,7 +109,6 @@ export function AboutScreen() {
         </Text>
       </Section>
 
-      {/* ---------------------------------------------------------------- */}
 
       <Section
         title="Lane edge"
@@ -149,7 +133,6 @@ export function AboutScreen() {
         </Text>
       </Section>
 
-      {/* ---------------------------------------------------------------- */}
 
       <Section
         title="Reading the sign"
@@ -223,7 +206,6 @@ export function AboutScreen() {
         </View>
       </Section>
 
-      {/* ---------------------------------------------------------------- */}
 
       <Section
         title={`The ${bar}-point bar`}
@@ -251,7 +233,6 @@ export function AboutScreen() {
         </Text>
       </Section>
 
-      {/* ---------------------------------------------------------------- */}
 
       <Section
         title="Mismatch score"
@@ -303,7 +284,6 @@ export function AboutScreen() {
         </Text>
       </Section>
 
-      {/* ---------------------------------------------------------------- */}
 
       <Section
         title="Shootout score"
@@ -387,7 +367,6 @@ export function AboutScreen() {
         </Text>
       </Section>
 
-      {/* ---------------------------------------------------------------- */}
 
       <Section
         title="Player matchup score"
@@ -426,7 +405,6 @@ export function AboutScreen() {
         </Text>
       </Section>
 
-      {/* ---------------------------------------------------------------- */}
 
       <Section title="What these numbers don’t say" hint="Worth knowing before you act">
         <Bullet>
@@ -482,7 +460,6 @@ function Section({
   );
 }
 
-/** A formula as chips, so the shape reads before the words do. */
 function Formula({ parts, result }: { parts: string[]; result: string }) {
   return (
     <View style={styles.formula}>
@@ -497,12 +474,6 @@ function Formula({ parts, result }: { parts: string[]; result: string }) {
   );
 }
 
-/**
- * One illustrative lane, laid out exactly like a real edge row.
- *
- * The point of mirroring the real row is that the reading below it maps onto
- * something the user will actually see, rather than onto a diagram.
- */
 function ExampleEdge({
   label,
   unit,
@@ -535,7 +506,6 @@ function ExampleEdge({
   );
 }
 
-/** One band of the edge ramp, coloured by the real ramp rather than a copy. */
 function ScaleBand({
   value,
   label,

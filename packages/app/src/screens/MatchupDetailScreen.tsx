@@ -32,13 +32,8 @@ import {
 } from '../matchupFormat';
 import { getPixels, scoreColor, theme } from '../theme';
 
-/**
- * Below this width the two staff cards are unreadable side by side — the
- * tendency labels wrap to three lines each. Phones stack; tablets sit level.
- */
 const STAFF_SIDE_BY_SIDE_WIDTH = 700;
 
-/** The three lineup charts a team publishes, in the order the chips read. */
 const UNIT_LABEL: Record<MatchupStarter['unit'], string> = {
   offense: 'Off',
   defense: 'DEF',
@@ -51,7 +46,6 @@ const UNIT_TITLE: Record<MatchupStarter['unit'], string> = {
   special: 'starting special teams',
 };
 
-/** Tendencies worth surfacing on a fingerprint, in the order they read best. */
 const HEADLINE_OFFENSE = ['proe', 'sec_per_play', 'play_action_rate', 'te_target_share'];
 const HEADLINE_DEFENSE = ['blitz_rate', 'pressure_rate', 'epa_allowed_pass', 'epa_allowed_rush'];
 
@@ -64,14 +58,11 @@ export function MatchupDetailScreen({
   game: MatchupSummary;
   onBack: () => void;
   onSelectPlayer: (player: MatchupPlayer) => void;
-  /** Offered only when DraftKings is pricing this game as a showdown slate. */
   onBuildShowdown?: (slate: SlateSummary, strategy: StrategyDefinition) => void;
 }) {
   const [detail, setDetail] = useState<MatchupDetail | null>(null);
   const [meta, setMeta] = useState<MatchupMeta | null>(null);
   const [error, setError] = useState<string | null>(null);
-  // 'skill' is the graded-matchup list; anything else is `${team}|${unit}`,
-  // which is a starting lineup off the depth chart.
   const [filter, setFilter] = useState('skill');
   const [showdown, setShowdown] = useState<{
     slate: SlateSummary;
@@ -81,8 +72,6 @@ export function MatchupDetailScreen({
 
   useEffect(() => {
     let cancelled = false;
-    // A chip names one team, so it cannot survive a move to a game that team
-    // is not in — the list would come back empty rather than wrong-looking.
     setFilter('skill');
     Promise.all([fetchMatchup(game.game_id), fetchMatchupMeta()])
       .then(([d, m]) => {
@@ -96,17 +85,6 @@ export function MatchupDetailScreen({
     };
   }, [game.game_id]);
 
-  /*
-   * Whether this game has a showdown slate, which is what decides if the build
-   * button appears at all.
-   *
-   * Derived from the imported salaries rather than from a list of games: a
-   * showdown contest exists only where DraftKings has run one, that is usually
-   * a single game a week, and `/slates` already reports it for the week now in
-   * play. A game from a finished week can therefore never match, which is the
-   * behaviour wanted anyway — a captain lineup for a game that has kicked off
-   * is not a lineup, it is a box score.
-   */
   useEffect(() => {
     let cancelled = false;
     fetchSlates()
@@ -118,8 +96,6 @@ export function MatchupDetailScreen({
         const strategy = res.strategies[0];
         setShowdown(slate && strategy ? { slate, strategy } : null);
       })
-      // No showdown import for this game is the ordinary state of almost every
-      // game on the board, so it is never surfaced as an error.
       .catch(() => {
         if (!cancelled) setShowdown(null);
       });
@@ -137,20 +113,9 @@ export function MatchupDetailScreen({
     if (!detail || filter === 'skill') return [];
     const [team, unit] = filter.split('|');
     const mine = detail.starters.filter((s) => s.team === team && s.unit === unit);
-    // Kickers, punters, holders and long snappers fall outside the ranked
-    // cohorts, so on the special-teams chart a row with no composite is a
-    // player the model cannot speak about at all. Held back until it can,
-    // which leaves the returners — who are ranked at their real position.
     return unit === 'special' ? mine.filter((p) => p.composite != null) : mine;
   }, [detail, filter]);
 
-  /**
-   * Both offences, then each side of the ball a team at a time.
-   *
-   * The away team leads because that is how the game reads everywhere else on
-   * the screen — 'CLE @ JAX' — and a chip row that reversed it would fight the
-   * header directly above it.
-   */
   const chips = useMemo(() => {
     if (!detail) return [];
     const { away_team: away, home_team: home } = detail;
@@ -259,12 +224,6 @@ export function MatchupDetailScreen({
         </View>
       )}
 
-      {/*
-        Both readings of the game, side by side. They routinely disagree — a
-        great defense strangling a bad offense is an enormous talent gap and a
-        dead game — so showing one without the other is how a reader ends up
-        mistaking the first question for the second.
-      */}
       <View style={styles.envRow}>
         <Text style={styles.envText}>
           Talent gap {Number(detail.mismatch_score).toFixed(1)} · scoring{' '}
@@ -326,12 +285,6 @@ export function MatchupDetailScreen({
         ))}
 
       <Text style={styles.sectionTitle}>{listTitle}</Text>
-      {/*
-        Seven chips never fit across a phone, and wrapping them to two rows
-        pushes the list itself below the fold. Scrolling sideways keeps the
-        whole set reachable at any width; where they already fit, there is
-        nothing to scroll.
-      */}
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
@@ -388,7 +341,6 @@ function StaffCard({
 }: {
   profile: SideProfile;
   meta: MatchupMeta;
-  /** Stacked cards own the full width, so they must not share height as flex children. */
   stacked: boolean;
 }) {
   const offenseSource = tendencySourceLabel(profile.offense.source, profile.coach);
@@ -447,12 +399,6 @@ function StaffCard({
   );
 }
 
-/**
- * Ordinal form of a placing: 1st, 2nd, 3rd, 11th.
- *
- * The teens are the case a naive implementation gets wrong — 13 is thirteenth,
- * not thirteen-th-as-in-third.
- */
 function ordinal(n: number): string {
   const lastTwo = n % 100;
   if (lastTwo >= 11 && lastTwo <= 13) return `${n}th`;
@@ -464,21 +410,6 @@ function ordinal(n: number): string {
   }
 }
 
-/**
- * One tendency: the number, and where it places in the league.
- *
- * A rank needs no explaining — 1st of 32 is the most in the league and 32nd is
- * the least, which is what a reader wants from this card. Percentiles said the
- * same thing in a vocabulary that assumes a statistics background.
- *
- * The bar is drawn from the rank rather than the raw value, because the raw
- * values share no scale: seconds per play would overflow the track, EPA would
- * be invisible on it, and a 22% blitz rate and a 22% tight-end target share
- * would draw the same bar despite being a heavy blitz rate and an ordinary
- * target share. Drawing it from the rank also keeps the bar and the words
- * saying the same thing, which is what went wrong when it was drawn from a
- * percentile sitting beside an unrelated number.
- */
 function TendencyLine({
   label,
   value,
@@ -491,7 +422,6 @@ function TendencyLine({
   rankOf: number | null;
 }) {
   const placed = rank != null && rankOf != null && rankOf > 0;
-  // 1st fills the track, last leaves one slot showing.
   const fill = placed ? ((rankOf - rank + 1) / rankOf) * 100 : 0;
 
   return (
@@ -580,7 +510,6 @@ function PlayerMatchupRow({
   );
 }
 
-/** Compact real stat line, only for the categories a player actually produced in. */
 function statLine(line: MatchupPlayer['actual_line']): string {
   if (!line) return '';
   const parts: string[] = [];
@@ -592,16 +521,6 @@ function statLine(line: MatchupPlayer['actual_line']): string {
   return parts.length > 0 ? ` · ${parts.join(', ')}` : '';
 }
 
-/**
- * One line of a starting lineup.
- *
- * The role, not the position, leads the row: on a depth chart 'LCB' and 'RCB'
- * are two different jobs that both normalise to 'CB', and which side of the
- * field a corner lines up on is exactly the sort of thing this list exists to
- * show. Kickers, punters, snappers and returners carry no ranking — they are
- * outside the cohorts this app scores — so their score column reads as blank
- * rather than as a zero.
- */
 function StarterRow({ starter }: { starter: MatchupStarter }) {
   const composite = starter.composite;
 
@@ -736,8 +655,6 @@ const styles = StyleSheet.create({
   edgeValue: { fontSize: getPixels(17), fontWeight: '800', fontVariant: ['tabular-nums'], width: 46, textAlign: 'right' },
 
   filterScroll: { marginBottom: 6, marginHorizontal: -16 },
-  // Padded to the screen margin the ScrollView just cancelled, so the first
-  // and last chip clear the edges while the row still scrolls edge to edge.
   filterRow: { flexDirection: 'row', gap: 8, paddingHorizontal: 16 },
   filterChip: {
     paddingHorizontal: 12,
@@ -783,8 +700,6 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: theme.border,
   },
-  // Wide enough for the longest depth-chart abbreviation ('LILB') so the names
-  // beside them line up down the column.
   starterRole: {
     color: theme.textFaint,
     fontSize: getPixels(10.5),

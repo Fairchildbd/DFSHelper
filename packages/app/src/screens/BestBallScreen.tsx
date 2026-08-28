@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Dimensions,
   FlatList,
   Pressable,
   RefreshControl,
@@ -16,20 +17,13 @@ import {
   type MatchupSummary,
   type WeekInfo,
 } from '../api';
-import { MatchupRow } from '../components/MatchupRow';
+import { MATCHUP_ROW_HEIGHT, MatchupRow } from '../components/MatchupRow';
 import { getPixels, theme } from '../theme';
 
-/**
- * Season-wide matchup browser, for best ball.
- *
- * Best ball drafts once and never sets a lineup, so the question is which spots
- * look good across the whole year rather than which look good on Sunday. That
- * makes a full-season sweep the right shape here and the wrong shape for the
- * weekly view, which is why the two are separate screens over the same table.
- *
- * Predictions for later weeks are only present if the season-wide build has
- * been run; the weekly job deliberately touches just the week in play.
- */
+const ROWS_ON_FIRST_PAINT = Math.ceil(Dimensions.get('window').height / MATCHUP_ROW_HEIGHT) + 1;
+
+const VIEWPORTS_KEPT_MOUNTED = 11;
+
 export function BestBallScreen({
   onSelectGame,
 }: {
@@ -44,8 +38,6 @@ export function BestBallScreen({
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Same guard as the rankings list: a slow request for an earlier week must
-  // not overwrite the week the user has since tapped.
   const requestId = useRef(0);
 
   useEffect(() => {
@@ -96,6 +88,13 @@ export function BestBallScreen({
     setLoading(true);
     load();
   }, [load, season, week]);
+
+  const renderGame = useCallback(
+    ({ item, index }: { item: MatchupSummary; index: number }) => (
+      <MatchupRow game={item} rank={index + 1} onPress={onSelectGame} />
+    ),
+    [onSelectGame],
+  );
 
   const selected = weeks.find((w) => w.season === season && w.week === week);
 
@@ -172,9 +171,14 @@ export function BestBallScreen({
       data={games}
       keyExtractor={(g) => g.game_id}
       ListHeaderComponent={header}
-      renderItem={({ item, index }) => (
-        <MatchupRow game={item} rank={index + 1} onPress={onSelectGame} />
-      )}
+      renderItem={renderGame}
+      getItemLayout={(_data, index) => ({
+        length: MATCHUP_ROW_HEIGHT,
+        offset: MATCHUP_ROW_HEIGHT * index,
+        index,
+      })}
+      initialNumToRender={ROWS_ON_FIRST_PAINT}
+      windowSize={VIEWPORTS_KEPT_MOUNTED}
       refreshControl={
         <RefreshControl
           refreshing={refreshing}
@@ -221,7 +225,6 @@ const styles = StyleSheet.create({
     borderColor: theme.border,
   },
   chipActive: { backgroundColor: theme.accent, borderColor: theme.accent },
-  // A week with no predictions built yet reads as unavailable rather than empty.
   chipEmpty: { borderStyle: 'dashed' },
   chipTextEmpty: { color: theme.textFaint },
   chipText: { color: theme.textDim, fontSize: getPixels(13), fontWeight: '600' },

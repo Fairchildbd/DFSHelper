@@ -1,30 +1,9 @@
-/**
- * College production ingest, from the CollegeFootballData API.
- *
- * Two things about this source shape the code:
- *
- * The stats endpoint returns *long* format — one row per
- * (player, category, statType) — so a player's season is scattered across a
- * dozen rows that have to be pivoted back into columns. Category matters when
- * pivoting: `passing/INT` is an interception thrown and `interceptions/INT` is
- * one caught. Collapsing on statType alone would credit quarterbacks with
- * takeaways.
- *
- * And CFBD's player ids are its own numeric ids, unrelated to the slug-style
- * `cfb_id` nflverse carries. There is no shared key, so linking a college
- * career to an NFL player is done on name + school, and any match that is not
- * unique is left unlinked rather than guessed at.
- */
 
 import { insertBatched, sql } from '../db.ts';
 import { CFBD_API_KEY, COLLEGE_SEASON_START } from '../env.ts';
 
 const CFBD_BASE = 'https://apinext.collegefootballdata.com';
 
-/**
- * Categories worth pulling. `interceptions` is separate from `defensive`
- * upstream, and both are needed for defensive backs.
- */
 const CATEGORIES = ['passing', 'rushing', 'receiving', 'defensive', 'interceptions'] as const;
 
 interface PlayerSeasonStat {
@@ -38,10 +17,6 @@ interface PlayerSeasonStat {
   stat: number | string;
 }
 
-/**
- * Maps a (category, statType) pair onto a column. Anything not listed is
- * ignored, which keeps the pivot resilient to CFBD adding stat types.
- */
 const STAT_COLUMNS: Record<string, string> = {
   'passing|YDS': 'passing_yards',
   'passing|TD': 'passing_tds',
@@ -62,8 +37,6 @@ const STAT_COLUMNS: Record<string, string> = {
   'defensive|SACKS': 'sacks',
   'defensive|PD': 'pass_defended',
 
-  // Interceptions caught live in their own category; the `defensive|INT` pair
-  // does not exist upstream, and `passing|INT` means the opposite thing.
   'interceptions|INT': 'interceptions_def',
 };
 
@@ -97,7 +70,6 @@ function toNumber(value: number | string | null | undefined): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
-/** Pull one season, pivot it, and upsert. */
 export async function loadCollegeSeason(season: number): Promise<number> {
   const byPlayer = new Map<string, Record<string, unknown>>();
 
@@ -118,7 +90,7 @@ export async function loadCollegeSeason(season: number): Promise<number> {
         row = {
           cfb_player_id: id,
           season,
-          gsis_id: null, // linked after load, by name + school
+          gsis_id: null,
           player_name: r.player,
           team: r.team,
           position: null,
@@ -137,20 +109,6 @@ export async function loadCollegeSeason(season: number): Promise<number> {
   );
 }
 
-/**
- * Resolve college careers onto NFL players.
- *
- * The only shared identity is the player's name. School would be the natural
- * confirmer, but the two feeds disagree on how to spell one ("Ole Miss" vs
- * "Mississippi", "USC" vs "Southern California"), so it would reject correct
- * matches more often than it caught wrong ones — matching is on normalized name
- * alone, and uniqueness carries the burden instead.
- *
- * A name that maps to more than one college career, or more than one NFL
- * player, is left unlinked. Attaching the wrong college career to a player is
- * worse than leaving the component empty, which the engine already handles by
- * renormalizing the remaining weights.
- */
 export async function linkCollegeToPlayers(): Promise<{ linked: number; ambiguous: number }> {
   const linked = await sql`
     WITH cfb AS (
@@ -190,22 +148,10 @@ export async function linkCollegeToPlayers(): Promise<{ linked: number; ambiguou
   return { linked: linked.count, ambiguous };
 }
 
-/**
- * Lowercase, strip accents and punctuation — the same shape `slugify` produces,
- * so a name normalizes identically whether it arrives from CFBD or nflverse.
- * Requires the `unaccent` extension, created by the migration.
- */
 function normalizeSql(column: string): string {
   return `regexp_replace(lower(unaccent(${column})), '[^a-z0-9]', '', 'g')`;
 }
 
-/**
- * Load every college season in range, then link.
- *
- * Seasons are fetched one at a time rather than in parallel: CFBD's free tier
- * rate-limits, and a burst of concurrent requests earns a 429 that costs more
- * time than it saves.
- */
 export async function runCollegeIngest(
   seasonStart = COLLEGE_SEASON_START,
   seasonEnd = new Date().getFullYear(),
@@ -220,7 +166,6 @@ export async function runCollegeIngest(
       console.log(`  ${season}: ${n} college player-seasons`);
     } catch (err) {
       const message = (err as Error).message;
-      // A season that has not been played yet is expected, not a failure.
       if (message.includes('404')) {
         skipped.push(season);
         continue;

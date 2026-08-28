@@ -16,11 +16,6 @@ export const theme = {
   danger: '#F87171',
 } as const;
 
-/**
- * Score colour ramp. Deliberately not a red-to-green gradient across the whole
- * range: most players sit near 50 by construction, so the middle stays neutral
- * and only genuine outliers pick up colour.
- */
 export function scoreColor(score: number | null): string {
   if (score == null) return theme.textFaint;
   if (score >= 85) return '#34D399';
@@ -31,10 +26,6 @@ export function scoreColor(score: number | null): string {
   return '#F87171';
 }
 
-/**
- * Confidence is the share of a position's drill weight that was actually
- * measured. Below ~0.5 the score is mostly assumption, and the UI says so.
- */
 export function confidenceLabel(confidence: number): {
   label: string;
   color: string;
@@ -46,19 +37,6 @@ export function confidenceLabel(confidence: number): {
   return { label: 'No workout', color: theme.textFaint };
 }
 
-/**
- * Type scale for screen density. Text sized in points renders physically
- * smaller as pixel density climbs, and this app packs dense tables onto
- * phones, so the denser the screen the more the type is opened up.
- *
- * The ladder is defined by the densities that actually ship — 1 and 1.5 (older
- * Android, web at 1x), 2 (most iPhones and Android xhdpi), 3 (iPhone Pro /
- * Android xxhdpi), 3.5+ (Pixel-class xxxhdpi) — and interpolates nothing:
- * anything in between takes the multiplier of the band it falls in.
- *
- * RULE: every fontSize and lineHeight in this app goes through getPixels.
- * A raw number in either of those two properties is a bug.
- */
 export function getPixels(size: number): number {
   const density = PixelRatio.get();
   if (density < 2) return size;
@@ -66,3 +44,4 @@ export function getPixels(size: number): number {
   if (density < 3.5) return size * 1.25;
   return size * 1.3;
 }
+

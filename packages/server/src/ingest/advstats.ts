@@ -1,16 +1,3 @@
-/**
- * Per-defender coverage and pass-rush production, from PFR advanced stats.
- *
- * This is the only free source that says what happened when a specific
- * defender was thrown at: targets, completions and yards allowed, and the
- * passer rating quarterbacks posted against him. It is what lets the matchup
- * view name the corners a receiver will see instead of only grading the
- * defense as a block.
- *
- * Weekly rows are folded to a season total. Rates are always recomputed from
- * the summed counts rather than averaged across weeks — averaging a rate over
- * games weights a one-target afternoon the same as a ten-target one.
- */
 
 import { blendSeasons, fitTwoWay, type MatchupCell, type SeasonValue } from '@dfs/shared';
 import { insertBatched, sql } from '../db.ts';
@@ -31,7 +18,6 @@ interface Totals {
   yards: number;
   tds: number;
   ints: number;
-  /** Weighted by targets, so it can be divided back out into a mean. */
   ratingTargetSum: number;
   adotTargetSum: number;
   pressures: number;
@@ -70,8 +56,6 @@ export async function loadDefenderCoverage(
 
         const targets = num(r.def_targets) ?? 0;
         t.games++;
-        // The team on the most recent row wins, so a midseason move lands the
-        // defender on the team he finished with.
         t.team = str(r.team) ?? t.team;
         t.targets += targets;
         t.completions += num(r.def_completions_allowed) ?? 0;
@@ -83,8 +67,6 @@ export async function loadDefenderCoverage(
         t.missedTackles += num(r.def_missed_tackles) ?? 0;
         t.tackles += num(r.def_tackles_combined) ?? 0;
 
-        // Rating and depth of target are per-target measures; weight them by
-        // the targets they were computed over before summing.
         const rating = num(r.def_passer_rating_allowed);
         if (rating != null && targets > 0) t.ratingTargetSum += rating * targets;
         const adot = num(r.def_adot);
@@ -102,7 +84,7 @@ export async function loadDefenderCoverage(
   const rows = [...byKey.values()].map((t) => ({
     pfr_id: t.pfr_id,
     season: t.season,
-    gsis_id: null, // linked below, once players is known to be loaded
+    gsis_id: null,
     player_name: t.player_name,
     team: t.team,
     games: t.games,
@@ -126,9 +108,6 @@ export async function loadDefenderCoverage(
 
   const count = await insertBatched('defender_coverage', rows, '(pfr_id, season)');
 
-  // Same guard as the combine link in ingest/index.ts: nflverse reuses some
-  // pfr_ids across different people, and handing one defender's coverage
-  // numbers to another is worse than leaving him unlinked.
   const linked = await sql`
     WITH unambiguous AS (
       SELECT pfr_id FROM players
@@ -147,49 +126,8 @@ export async function loadDefenderCoverage(
   return count;
 }
 
-/**
- * Games behind a defense-versus-position coefficient before it is trusted in
- * full.
- *
- * Lower than it was when this fitted one pooled model across the window,
- * because it now fits each season separately and a season is seventeen games
- * rather than fifty. Holding the old value would have shrunk every coefficient
- * toward zero by roughly the amount the per-season split was meant to recover.
- */
 const DVP_SHRINKAGE = 4;
 
-/**
- * Defense versus position: how many fantasy points each defense surrendered to
- * each offensive position, per game.
- *
- * Computed from the weekly offensive table already in the database — every row
- * there carries the opponent, so the defense's concession is just the same data
- * read from the other side. Position comes from `players` rather than the
- * weekly row so it agrees with the rest of the pipeline.
- *
- * Two numbers come out of this, and the difference between them matters.
- *
- * `fp_allowed` is the raw average, and it is the number every DFS site
- * publishes. It is also biased, for a reason that has nothing to do with how
- * good the defense is: a team that happened to draw the league's weakest
- * offenses gave up fewer points to every position and grades as elite.
- *
- * `fp_allowed_adj` is the corrected version — what this defense would concede
- * to a league-average offense — fitted per season and then blended by sample
- * size and recency into the current-form figure the matchup layer grades on.
- * `offense_faced` reports the schedule that was removed, so the correction can
- * be shown rather than only applied.
- *
- * Fitted per season for the same reason the play-by-play pass is: a defense is
- * not a stable object across a three-year window, and a pooled fit describes an
- * average roster that never took the field. This is also where the correction
- * bites hardest — a game's fantasy concession carries far more schedule
- * variance than a single play's expected-points swing does.
- *
- * The unit is a game rather than a play, which is the right granularity:
- * fantasy points are conceded by a defense to a position group over a game, and
- * there is no per-play attribution of a position's fantasy scoring to reach for.
- */
 export async function computeDefenseVsPosition(seasons: number[]): Promise<number> {
   await sql`TRUNCATE def_vs_position`;
 
@@ -233,9 +171,7 @@ export async function computeDefenseVsPosition(seasons: number[]): Promise<numbe
     targets: number;
     n: number;
   }
-  /** Raw per-game totals for a defense against a position, across the window. */
   const rawByDefense = new Map<string, Totals>();
-  /** Offense-versus-defense cells, keyed position then season. */
   const books = new Map<string, Map<number, Map<string, MatchupCell>>>();
   const seasonsSeen = new Set<number>();
 
@@ -270,8 +206,6 @@ export async function computeDefenseVsPosition(seasons: number[]): Promise<numbe
   const rows: Record<string, unknown>[] = [];
 
   for (const [position, byPosition] of books) {
-    // Per-season fits, plus the games each defense played in that season, which
-    // is what weights the blend below.
     interface SeasonFit {
       season: number;
       fit: ReturnType<typeof fitTwoWay>;
@@ -311,7 +245,6 @@ export async function computeDefenseVsPosition(seasons: number[]): Promise<numbe
           value: sf.fit.league + (sf.fit.defense.get(defense) ?? 0),
           weight: n,
         });
-        // Schedule strength faced that season, game-weighted, in fantasy points.
         let weighted = 0;
         let total = 0;
         for (const cell of sf.cells) {
