@@ -18,6 +18,7 @@ import {
   type WeekInfo,
 } from '../api';
 import { MATCHUP_ROW_HEIGHT, MatchupRow } from '../components/MatchupRow';
+import { Trans, useTranslation } from '../i18n';
 import { getPixels, theme } from '../theme';
 
 const ROWS_ON_FIRST_PAINT = Math.ceil(Dimensions.get('window').height / MATCHUP_ROW_HEIGHT) + 1;
@@ -29,6 +30,7 @@ export function BestBallScreen({
 }: {
   onSelectGame: (game: MatchupSummary) => void;
 }) {
+  const { t } = useTranslation();
   const [weeks, setWeeks] = useState<WeekInfo[]>([]);
   const [season, setSeason] = useState<number | null>(null);
   const [week, setWeek] = useState<number | null>(null);
@@ -101,12 +103,17 @@ export function BestBallScreen({
   if (error) {
     return (
       <View style={styles.center}>
-        <Text style={styles.errorTitle}>Can’t reach the API</Text>
+        <Text style={styles.errorTitle}>{t('error.unreachableTitle')}</Text>
         <Text style={styles.errorBody}>{error}</Text>
         <Text style={styles.errorHint}>
-          Expecting the server at {API_URL}. Start it with{' '}
-          <Text style={styles.mono}>npm run api</Text>, and make sure{' '}
-          <Text style={styles.mono}>npm run db:matchups</Text> has been run at least once.
+          <Trans
+            i18nKey="error.expectingServerMatchups"
+            values={{ url: API_URL }}
+            components={{
+              command: <Text style={styles.mono} />,
+              matchupCommand: <Text style={styles.mono} />,
+            }}
+          />
         </Text>
       </View>
     );
@@ -115,11 +122,11 @@ export function BestBallScreen({
   const header = (
     <View>
       <View style={styles.header}>
-        <Text style={styles.title}>Best Ball</Text>
+        <Text style={styles.title}>{t('bestball.title')}</Text>
         <Text style={styles.subtitle}>
           {selected
-            ? `Week ${selected.week} · ${selected.games} games · sorted by mismatch`
-            : 'Loading schedule…'}
+            ? t('bestball.subtitle', { week: selected.week, games: selected.games })
+            : t('bestball.loadingSchedule')}
         </Text>
       </View>
 
@@ -156,11 +163,7 @@ export function BestBallScreen({
 
       {upcoming && selected?.played === 0 && (
         <View style={styles.notice}>
-          <Text style={styles.noticeText}>
-            No game this week has kicked off. Every number here is built from prior
-            seasons, so a team that has changed coaches or personnel may not resemble
-            its profile.
-          </Text>
+          <Text style={styles.noticeText}>{t('bestball.noKickoffNotice')}</Text>
         </View>
       )}
     </View>
@@ -194,9 +197,10 @@ export function BestBallScreen({
           <ActivityIndicator style={styles.loader} color={theme.accent} />
         ) : (
           <Text style={styles.empty}>
-            No predictions for this week yet. The weekly job only builds the week in
-            play — for the whole season, run{' '}
-            <Text style={styles.mono}>npm run db:matchups:bestball</Text>.
+            <Trans
+              i18nKey="bestball.empty"
+              components={{ command: <Text style={styles.mono} /> }}
+            />
           </Text>
         )
       }

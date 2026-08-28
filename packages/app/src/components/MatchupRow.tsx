@@ -1,6 +1,7 @@
 import { memo } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import type { MatchupSummary } from '../api';
+import { useTranslation } from '../i18n';
 import { describeEdge, edgeColor, formatKickoff, shootoutColor } from '../matchupFormat';
 import { getPixels, theme } from '../theme';
 
@@ -34,6 +35,7 @@ export const MatchupRow = memo(function MatchupRow({
   rank: number;
   onPress: (game: MatchupSummary) => void;
 }) {
+  const { t } = useTranslation();
   const edge = game.top_edge_value == null ? null : Number(game.top_edge_value);
   const isFinal = game.home_score != null && game.away_score != null;
   const gap = Number(game.mismatch_score);
@@ -64,9 +66,12 @@ export const MatchupRow = memo(function MatchupRow({
         </View>
 
         <Text style={styles.kickoff} numberOfLines={1}>
-          {isFinal ? 'Final' : formatKickoff(game.gameday, game.gametime)}
+          {isFinal ? t('row.final') : formatKickoff(game.gameday, game.gametime)}
           {game.away_coach && game.home_coach
-            ? ` · ${lastName(game.away_coach)} vs ${lastName(game.home_coach)}`
+            ? t('row.coachVsCoach', {
+                away: lastName(game.away_coach),
+                home: lastName(game.home_coach),
+              })
             : ''}
         </Text>
 
@@ -81,17 +86,19 @@ export const MatchupRow = memo(function MatchupRow({
         {isFinal ? (
           <Text style={styles.meta} numberOfLines={1}>
             {game.top10_hits == null
-              ? 'No fantasy lines recorded'
-              : `${game.top10_hits} of our top 10 finished in the real top 10`}
-            {game.backfilled ? ' · graded after the fact' : ''}
+              ? t('row.noFantasyLines')
+              : t('row.top10Hits', { hits: game.top10_hits })}
+            {game.backfilled ? t('row.gradedAfterTheFact') : ''}
           </Text>
         ) : (
           <Text style={styles.meta} numberOfLines={1}>
-            {game.edge_count} mismatch{game.edge_count === 1 ? '' : 'es'} · gap{' '}
-            {gap.toFixed(0)}
+            {t('row.mismatchSummary', {
+              count: game.edge_count,
+              gap: gap.toFixed(0),
+            })}
             {game.total_line != null
-              ? ` · total ${Number(game.total_line).toFixed(1)}`
-              : ' · no line yet'}
+              ? t('row.totalLine', { total: Number(game.total_line).toFixed(1) })
+              : t('row.noLineYet')}
           </Text>
         )}
       </View>
@@ -99,7 +106,11 @@ export const MatchupRow = memo(function MatchupRow({
       <View style={styles.scoreCol}>
         <Text style={[styles.score, { color }]}>{score.toFixed(0)}</Text>
         <Text style={styles.scoreCaption}>
-          {isFinal ? 'predicted' : shootout == null ? 'gap' : 'scoring'}
+          {isFinal
+            ? t('row.captionPredicted')
+            : shootout == null
+              ? t('row.captionGap')
+              : t('row.captionScoring')}
         </Text>
       </View>
     </Pressable>

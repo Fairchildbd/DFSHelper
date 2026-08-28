@@ -16,13 +16,14 @@ import {
   type SlateSummary,
   type StrategyDefinition,
 } from '../api';
+import { t as translate, useTranslation } from '../i18n';
 import { getPixels, theme } from '../theme';
 
 export function LineupScreen({
   slate,
   strategy,
   onBack,
-  backLabel = 'This Week',
+  backLabel = translate('app.back.week'),
   label,
 }: {
   slate: SlateSummary;
@@ -31,6 +32,7 @@ export function LineupScreen({
   backLabel?: string;
   label?: string;
 }) {
+  const { t } = useTranslation();
   const [data, setData] = useState<LineupResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -82,36 +84,32 @@ export function LineupScreen({
 
       {slate.contest === 'showdown' ? (
         <>
-          <Text style={styles.title}>Showdown captain</Text>
+          <Text style={styles.title}>{t('lineup.showdownTitle')}</Text>
           <Text style={styles.subtitle}>
-            {label ? `${label} · ` : ''}one captain at 1.5x salary and 1.5x points, five
-            flex.
+            {label ? t('lineup.gamePrefix', { label }) : ''}
+            {t('lineup.showdownSubtitle')}
           </Text>
-          <Text style={styles.strategyNote}>
-            Three entries rather than one, because six players from a single game share
-            a ball and a scoreboard: one betting on each offense having the day, and one
-            for a game that never gets going. Two receivers from a team at most, and never
-            without their quarterback — a third and fourth receiver are competing with the
-            first two for the same throws.
-          </Text>
+          <Text style={styles.strategyNote}>{t('lineup.showdownNote')}</Text>
         </>
       ) : (
         <>
           <Text style={styles.title}>{strategy.label}</Text>
-          <Text style={styles.subtitle}>
-            Millionaire Maker · QB, 2 RB, 3 WR, TE, FLEX, DST.
-          </Text>
+          <Text style={styles.subtitle}>{t('lineup.classicSubtitle')}</Text>
           <Text style={styles.strategyNote}>{strategy.description}</Text>
         </>
       )}
 
       {data?.stack && (
         <View style={styles.stackBanner}>
-          <Text style={styles.stackTitle}>Stacking {data.stack.label}</Text>
+          <Text style={styles.stackTitle}>
+            {t('lineup.stackingTitle', { game: data.stack.label })}
+          </Text>
           <Text style={styles.stackBody}>
-            {data.stack.players} of the nine from this game
+            {t('lineup.stackedPlayers', { count: data.stack.players })}
             {data.stack.mismatchScore != null
-              ? ` · mismatch ${data.stack.mismatchScore.toFixed(0)}, the highest on the slate`
+              ? t('lineup.stackMismatch', {
+                  score: data.stack.mismatchScore.toFixed(0),
+                })
               : ''}
           </Text>
         </View>
@@ -121,14 +119,14 @@ export function LineupScreen({
 
       {error && (
         <View style={styles.problem}>
-          <Text style={styles.problemTitle}>Can’t build a lineup</Text>
+          <Text style={styles.problemTitle}>{t('lineup.cannotBuild')}</Text>
           <Text style={styles.problemBody}>{error}</Text>
         </View>
       )}
 
       {data?.problem && (
         <View style={styles.problem}>
-          <Text style={styles.problemTitle}>Nothing to build from</Text>
+          <Text style={styles.problemTitle}>{t('lineup.nothingToBuild')}</Text>
           <Text style={styles.problemBody}>{data.problem}</Text>
         </View>
       )}
@@ -154,11 +152,17 @@ export function LineupScreen({
 
       {data?.builds && (
         <Text style={styles.meta}>
-          {data.poolSize} in the pool · defense rates from {data.baselineSeason}
-          {data.unavailable > 0 ? ` · ${data.unavailable} out or on IR` : ''}
-          {data.ungraded > 0 ? ` · ${data.ungraded} ungraded` : ''}
+          {t('lineup.poolMeta', {
+            pool: data.poolSize,
+            season: String(data.baselineSeason),
+          })}
+          {data.unavailable > 0 ? t('lineup.unavailable', { count: data.unavailable }) : ''}
+          {data.ungraded > 0 ? t('lineup.ungraded', { count: data.ungraded }) : ''}
           {excludes.length > 0 || locks.length > 0
-            ? ` · ${excludes.length} dropped, ${locks.length} locked across all three`
+            ? t('lineup.dropsAndLocksAll', {
+                dropped: excludes.length,
+                locked: locks.length,
+              })
             : ''}
         </Text>
       )}
@@ -170,7 +174,7 @@ export function LineupScreen({
             setLocks([]);
           }}
         >
-          <Text style={styles.reset}>Reset</Text>
+          <Text style={styles.reset}>{t('lineup.reset')}</Text>
         </Pressable>
       )}
 
@@ -178,23 +182,23 @@ export function LineupScreen({
         <>
           <View style={styles.summary}>
             <Figure
-              label="Avg matchup"
+              label={t('lineup.avgMatchup')}
               value={data.lineup.averageGrade.toFixed(0)}
               accent
             />
-            <Figure label="Salary" value={`$${data.lineup.salary.toLocaleString()}`} />
             <Figure
-              label="Left over"
-              value={`$${data.lineup.remaining.toLocaleString()}`}
+              label={t('lineup.salary')}
+              value={t('lineup.money', { amount: data.lineup.salary.toLocaleString() })}
+            />
+            <Figure
+              label={t('lineup.leftOver')}
+              value={t('lineup.money', { amount: data.lineup.remaining.toLocaleString() })}
               warn={data.lineup.remaining > 1500}
             />
           </View>
 
           {data.lineup.remaining > 1500 && (
-            <Text style={styles.leftoverNote}>
-              Money left unspent is matchup edge left unbought. It usually means the pool
-              is thin at a position — check that the salary file covers the whole slate.
-            </Text>
+            <Text style={styles.leftoverNote}>{t('lineup.leftoverNote')}</Text>
           )}
 
           {data.lineup.picks.map((pick) => (
@@ -210,9 +214,14 @@ export function LineupScreen({
 
           <View style={styles.footerRow}>
             <Text style={styles.meta}>
-              {data.poolSize} in the pool · defense rates from {data.baselineSeason}
-              {data.unavailable > 0 ? ` · ${data.unavailable} out or on IR` : ''}
-              {data.ungraded > 0 ? ` · ${data.ungraded} ungraded` : ''}
+              {t('lineup.poolMeta', {
+                pool: data.poolSize,
+                season: String(data.baselineSeason),
+              })}
+              {data.unavailable > 0
+                ? t('lineup.unavailable', { count: data.unavailable })
+                : ''}
+              {data.ungraded > 0 ? t('lineup.ungraded', { count: data.ungraded }) : ''}
             </Text>
             {(excludes.length > 0 || locks.length > 0) && (
               <Pressable
@@ -221,7 +230,7 @@ export function LineupScreen({
                   setLocks([]);
                 }}
               >
-                <Text style={styles.reset}>Reset</Text>
+                <Text style={styles.reset}>{t('lineup.reset')}</Text>
               </Pressable>
             )}
           </View>
@@ -262,7 +271,9 @@ const ALL = 'all';
 
 function shortLabel(build: ShowdownBuild): string {
   if (build.team) return build.team;
-  return build.key === 'shootout' ? 'Shootout' : 'Low-scoring';
+  return build.key === 'shootout'
+    ? translate('lineup.shootout')
+    : translate('lineup.lowScoring');
 }
 
 function ScenarioPicker({
@@ -276,11 +287,12 @@ function ScenarioPicker({
   selected: string;
   onSelect: (key: string) => void;
 }) {
+  const { t } = useTranslation();
   const recommended = builds.find((b) => b.key === read?.scenario);
 
   return (
     <View style={styles.picker}>
-      <Text style={styles.pickerLabel}>How do you think this game goes?</Text>
+      <Text style={styles.pickerLabel}>{t('lineup.scenarioQuestion')}</Text>
 
       <View style={styles.chips}>
         {builds.map((build) => (
@@ -299,23 +311,25 @@ function ScenarioPicker({
           onPress={() => onSelect(ALL)}
           style={[styles.chip, selected === ALL && styles.chipOn]}
         >
-          <Text style={[styles.chipText, selected === ALL && styles.chipTextOn]}>All four</Text>
+          <Text style={[styles.chipText, selected === ALL && styles.chipTextOn]}>
+            {t('lineup.allScenarios')}
+          </Text>
         </Pressable>
       </View>
 
       {read && recommended ? (
         <Text style={styles.readNote}>
           <Text style={styles.readLead}>
-            Model’s read{read.confidence === 'slight' ? ', slightly' : ''}:{' '}
-            {shortLabel(recommended)}.
+            {read.confidence === 'slight'
+              ? t('lineup.readLeadSlight', { scenario: shortLabel(recommended) })
+              : t('lineup.readLead', { scenario: shortLabel(recommended) })}
           </Text>{' '}
           {read.why}
         </Text>
       ) : (
         <Text style={styles.readNote}>
-          <Text style={styles.readLead}>No read.</Text> The lanes in this game are too
-          even, or too thinly graded, to say which way it goes — which is itself a reason
-          to spread across all four rather than pick one.
+          <Text style={styles.readLead}>{t('lineup.noReadLead')}</Text>{' '}
+          {t('lineup.noReadBody')}
         </Text>
       )}
     </View>
@@ -333,6 +347,8 @@ function BuildCard({
   onLock: (id: string) => void;
   onDrop: (id: string) => void;
 }) {
+  const { t } = useTranslation();
+
   return (
     <View style={styles.build}>
       <Text style={styles.buildTitle}>{build.label}</Text>
@@ -341,9 +357,19 @@ function BuildCard({
       {build.lineup ? (
         <>
           <View style={styles.summary}>
-            <Figure label="Avg matchup" value={build.lineup.averageGrade.toFixed(0)} accent />
-            <Figure label="Salary" value={`$${build.lineup.salary.toLocaleString()}`} />
-            <Figure label="Left over" value={`$${build.lineup.remaining.toLocaleString()}`} />
+            <Figure
+              label={t('lineup.avgMatchup')}
+              value={build.lineup.averageGrade.toFixed(0)}
+              accent
+            />
+            <Figure
+              label={t('lineup.salary')}
+              value={t('lineup.money', { amount: build.lineup.salary.toLocaleString() })}
+            />
+            <Figure
+              label={t('lineup.leftOver')}
+              value={t('lineup.money', { amount: build.lineup.remaining.toLocaleString() })}
+            />
           </View>
 
           {build.lineup.picks.map((pick) => (
@@ -358,7 +384,7 @@ function BuildCard({
         </>
       ) : (
         <View style={styles.problem}>
-          <Text style={styles.problemTitle}>Can’t build this one</Text>
+          <Text style={styles.problemTitle}>{t('lineup.cannotBuildThisOne')}</Text>
           <Text style={styles.problemBody}>{build.problem}</Text>
         </View>
       )}
@@ -379,6 +405,8 @@ function PickRow({
   onLock: () => void;
   onDrop: () => void;
 }) {
+  const { t } = useTranslation();
+
   return (
     <View style={[styles.pick, locked && styles.pickLocked, stacked && styles.pickStacked]}>
       <View style={styles.pickHead}>
@@ -388,7 +416,7 @@ function PickRow({
             {pick.name}
           </Text>
           <Text style={styles.pickTeam}>
-            {pick.position} · {pick.team}
+            {t('lineup.pickTeam', { position: pick.position, team: pick.team })}
           </Text>
         </View>
         {pick.status === 'Q' && <Text style={styles.flag}>Q</Text>}
@@ -396,7 +424,9 @@ function PickRow({
           <Text style={styles.points}>
             {pick.matchupScore == null ? '—' : pick.matchupScore.toFixed(0)}
           </Text>
-          <Text style={styles.cost}>${pick.cost.toLocaleString()}</Text>
+          <Text style={styles.cost}>
+            {t('lineup.money', { amount: pick.cost.toLocaleString() })}
+          </Text>
         </View>
       </View>
 
@@ -407,11 +437,11 @@ function PickRow({
       <View style={styles.actions}>
         <Pressable onPress={onLock} hitSlop={6}>
           <Text style={[styles.action, locked && styles.actionOn]}>
-            {locked ? 'Locked' : 'Lock'}
+            {locked ? t('lineup.locked') : t('lineup.lock')}
           </Text>
         </Pressable>
         <Pressable onPress={onDrop} hitSlop={6}>
-          <Text style={styles.action}>Drop</Text>
+          <Text style={styles.action}>{t('lineup.drop')}</Text>
         </Pressable>
       </View>
     </View>

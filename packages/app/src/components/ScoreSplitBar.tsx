@@ -1,4 +1,5 @@
 import { StyleSheet, Text, View } from 'react-native';
+import { useTranslation } from '../i18n';
 import { getPixels, theme } from '../theme';
 
 export interface Weights {
@@ -14,6 +15,8 @@ export function ScoreSplitBar({
   weights: Weights | null;
   compact?: boolean;
 }) {
+  const { t } = useTranslation();
+
   if (!weights) return null;
 
   const athletic = Math.round(weights.athletic * 100);
@@ -23,9 +26,9 @@ export function ScoreSplitBar({
   if (athletic + college + nfl === 0) return null;
 
   const segments = [
-    { value: athletic, color: theme.athletic, label: 'workout' },
-    { value: college, color: theme.college, label: 'college' },
-    { value: nfl, color: theme.production, label: 'NFL' },
+    { key: 'athletic', value: athletic, color: theme.athletic, label: t('split.workout') },
+    { key: 'college', value: college, color: theme.college, label: t('split.college') },
+    { key: 'nfl', value: nfl, color: theme.production, label: t('split.nfl') },
   ].filter((s) => s.value > 0);
 
   return (
@@ -33,7 +36,7 @@ export function ScoreSplitBar({
       <View style={styles.bar}>
         {segments.map((s) => (
           <View
-            key={s.label}
+            key={s.key}
             style={[styles.segment, { flex: s.value, backgroundColor: s.color }]}
           />
         ))}
@@ -41,8 +44,8 @@ export function ScoreSplitBar({
       {!compact && (
         <View style={styles.legend}>
           {segments.map((s) => (
-            <Text key={s.label} style={[styles.legendText, { color: s.color }]}>
-              {s.value}% {s.label}
+            <Text key={s.key} style={[styles.legendText, { color: s.color }]}>
+              {t('split.legendEntry', { percent: s.value, label: s.label })}
             </Text>
           ))}
         </View>
