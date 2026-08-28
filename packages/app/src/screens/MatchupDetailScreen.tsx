@@ -1,0 +1,807 @@
+import { useEffect, useMemo, useState } from 'react';
+import {
+  ActivityIndicator,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+  useWindowDimensions,
+} from 'react-native';
+import {
+  fetchMatchup,
+  fetchMatchupMeta,
+  fetchSlates,
+  type MatchupDetail,
+  type MatchupMeta,
+  type MatchupPlayer,
+  type MatchupStarter,
+  type MatchupSummary,
+  type SideProfile,
+  type SlateSummary,
+  type StrategyDefinition,
+} from '../api';
+import {
+  SKILL_POSITIONS,
+  describeEdge,
+  edgeColor,
+  formatKickoff,
+  formatTendency,
+  mismatchColor,
+  tendencySourceLabel,
+} from '../matchupFormat';
+import { getPixels, scoreColor, theme } from '../theme';
+
+/**
+ * Below this width the two staff cards are unreadable side by side — the
+ * tendency labels wrap to three lines each. Phones stack; tablets sit level.
+ */
+const STAFF_SIDE_BY_SIDE_WIDTH = 700;
+
+/** The three lineup charts a team publishes, in the order the chips read. */
+const UNIT_LABEL: Record<MatchupStarter['unit'], string> = {
+  offense: 'Off',
+  defense: 'DEF',
+  special: 'SPT',
+};
+
+const UNIT_TITLE: Record<MatchupStarter['unit'], string> = {
+  offense: 'starting offense',
+  defense: 'starting defense',
+  special: 'starting special teams',
+};
+
+/** Tendencies worth surfacing on a fingerprint, in the order they read best. */
+const HEADLINE_OFFENSE = ['proe', 'sec_per_play', 'play_action_rate', 'te_target_share'];
+const HEADLINE_DEFENSE = ['blitz_rate', 'pressure_rate', 'epa_allowed_pass', 'epa_allowed_rush'];
+
+export function MatchupDetailScreen({
+  game,
+  onBack,
+  onSelectPlayer,
+  onBuildShowdown,
+}: {
+  game: MatchupSummary;
+  onBack: () => void;
+  onSelectPlayer: (player: MatchupPlayer) => void;
+  /** Offered only when DraftKings is pricing this game as a showdown slate. */
+  onBuildShowdown?: (slate: SlateSummary, strategy: StrategyDefinition) => void;
+}) {
+  const [detail, setDetail] = useState<MatchupDetail | null>(null);
+  const [meta, setMeta] = useState<MatchupMeta | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  // 'skill' is the graded-matchup list; anything else is `${team}|${unit}`,
+  // which is a starting lineup off the depth chart.
+  const [filter, setFilter] = useState('skill');
+  const [showdown, setShowdown] = useState<{
+    slate: SlateSummary;
+    strategy: StrategyDefinition;
+  } | null>(null);
+  const sideBySideStaff = useWindowDimensions().width >= STAFF_SIDE_BY_SIDE_WIDTH;
+
+  useEffect(() => {
+    let cancelled = false;
+    // A chip names one team, so it cannot survive a move to a game that team
+    // is not in — the list would come back empty rather than wrong-looking.
+    setFilter('skill');
+    Promise.all([fetchMatchup(game.game_id), fetchMatchupMeta()])
+      .then(([d, m]) => {
+        if (cancelled) return;
+        setDetail(d);
+        setMeta(m);
+      })
+      .catch((err) => !cancelled && setError((err as Error).message));
+    return () => {
+      cancelled = true;
+    };
+  }, [game.game_id]);
+
+  /*
+   * Whether this game has a showdown slate, which is what decides if the build
+   * button appears at all.
+   *
+   * Derived from the imported salaries rather than from a list of games: a
+   * showdown contest exists only where DraftKings has run one, that is usually
+   * a single game a week, and `/slates` already reports it for the week now in
+   * play. A game from a finished week can therefore never match, which is the
+   * behaviour wanted anyway — a captain lineup for a game that has kicked off
+   * is not a lineup, it is a box score.
+   */
+  useEffect(() => {
+    let cancelled = false;
+    fetchSlates()
+      .then((res) => {
+        if (cancelled) return;
+        const slate = res.slates.find(
+          (s) => s.contest === 'showdown' && s.game_id === game.game_id,
+        );
+        const strategy = res.strategies[0];
+        setShowdown(slate && strategy ? { slate, strategy } : null);
+      })
+      // No showdown import for this game is the ordinary state of almost every
+      // game on the board, so it is never surfaced as an error.
+      .catch(() => {
+        if (!cancelled) setShowdown(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [game.game_id]);
+
+  const players = useMemo(() => {
+    if (!detail || filter !== 'skill') return [];
+    return detail.players.filter((p) => SKILL_POSITIONS.includes(p.position));
+  }, [detail, filter]);
+
+  const starters = useMemo(() => {
+    if (!detail || filter === 'skill') return [];
+    const [team, unit] = filter.split('|');
+    const mine = detail.starters.filter((s) => s.team === team && s.unit === unit);
+    // Kickers, punters, holders and long snappers fall outside the ranked
+    // cohorts, so on the special-teams chart a row with no composite is a
+    // player the model cannot speak about at all. Held back until it can,
+    // which leaves the returners — who are ranked at their real position.
+    return unit === 'special' ? mine.filter((p) => p.composite != null) : mine;
+  }, [detail, filter]);
+
+  /**
+   * Both offences, then each side of the ball a team at a time.
+   *
+   * The away team leads because that is how the game reads everywhere else on
+   * the screen — 'CLE @ JAX' — and a chip row that reversed it would fight the
+   * header directly above it.
+   */
+  const chips = useMemo(() => {
+    if (!detail) return [];
+    const { away_team: away, home_team: home } = detail;
+    const chip = (team: string, unit: MatchupStarter['unit']) => ({
+      key: `${team}|${unit}`,
+      label: `${team} ${UNIT_LABEL[unit]}`,
+    });
+    return [
+      { key: 'skill', label: 'Skill Positions' },
+      chip(away, 'offense'),
+      chip(home, 'offense'),
+      chip(away, 'defense'),
+      chip(away, 'special'),
+      chip(home, 'defense'),
+      chip(home, 'special'),
+    ];
+  }, [detail]);
+
+  if (error) {
+    return (
+      <View style={styles.center}>
+        <Pressable onPress={onBack} style={styles.back}>
+          <Text style={styles.backText}>‹ Matchups</Text>
+        </Pressable>
+        <Text style={styles.errorBody}>{error}</Text>
+      </View>
+    );
+  }
+
+  if (!detail || !meta) {
+    return (
+      <View style={styles.center}>
+        <ActivityIndicator color={theme.accent} />
+      </View>
+    );
+  }
+
+  const score = Number(detail.mismatch_score);
+  const isFinal = detail.home_score != null && detail.away_score != null;
+  const unitLabels = new Map(meta.lanes.map((l) => [l.key, l.label]));
+
+  const [filterTeam, filterUnit] = filter.split('|');
+  const listTitle =
+    filter === 'skill'
+      ? isFinal
+        ? 'Graded players, against what they scored'
+        : 'Best matchups'
+      : `${filterTeam} ${UNIT_TITLE[filterUnit as MatchupStarter['unit']] ?? 'starters'}`;
+
+  return (
+    <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
+      <Pressable onPress={onBack} style={styles.back}>
+        <Text style={styles.backText}>‹ Matchups</Text>
+      </Pressable>
+
+      <View style={styles.hero}>
+        <Text style={styles.teams}>
+          {detail.away_team} <Text style={styles.at}>@</Text> {detail.home_team}
+        </Text>
+        <Text style={styles.kickoff}>
+          {formatKickoff(detail.gameday, detail.gametime)}
+          {detail.stadium ? ` · ${detail.stadium}` : ''}
+        </Text>
+        {isFinal && (
+          <Text style={styles.finalScore}>
+            FINAL {detail.away_team} {detail.away_score} – {detail.home_score}{' '}
+            {detail.home_team}
+          </Text>
+        )}
+        <Text style={[styles.heroScore, { color: mismatchColor(score) }]}>
+          {score.toFixed(1)}
+        </Text>
+        <Text style={styles.heroLabel}>
+          {isFinal ? 'predicted ' : ''}mismatch score · {detail.edge_count} lane
+          {detail.edge_count === 1 ? '' : 's'} past the {meta.edgeThreshold}-point bar
+        </Text>
+      </View>
+
+      {showdown && onBuildShowdown && !isFinal && (
+        <Pressable
+          style={({ pressed }) => [styles.buildButton, pressed && styles.buildPressed]}
+          onPress={() => onBuildShowdown(showdown.slate, showdown.strategy)}
+        >
+          <Text style={styles.buildLabel}>Build showdown captain lineup</Text>
+          <Text style={styles.buildMeta}>
+            {showdown.slate.players} priced for this game · captain at 1.5x salary and
+            1.5x points
+          </Text>
+        </Pressable>
+      )}
+
+      {isFinal && (
+        <View style={[styles.envRow, styles.resultRow]}>
+          <Text style={styles.resultHeadline}>
+            {detail.top10_hits == null
+              ? 'No fantasy lines were recorded for this game.'
+              : `${detail.top10_hits} of the ten highest-graded players finished in the game’s real top ten.`}
+          </Text>
+          {detail.backfilled && (
+            <Text style={styles.resultCaveat}>
+              Graded after the fact. This prediction was generated from a model whose
+              inputs already include this game, so treat it as a worked example rather
+              than as a forecast that was actually made in advance.
+            </Text>
+          )}
+        </View>
+      )}
+
+      {/*
+        Both readings of the game, side by side. They routinely disagree — a
+        great defense strangling a bad offense is an enormous talent gap and a
+        dead game — so showing one without the other is how a reader ends up
+        mistaking the first question for the second.
+      */}
+      <View style={styles.envRow}>
+        <Text style={styles.envText}>
+          Talent gap {Number(detail.mismatch_score).toFixed(1)} · scoring{' '}
+          {detail.shootout_score == null
+            ? 'not graded'
+            : Number(detail.shootout_score).toFixed(1)}
+          {detail.lean_team
+            ? `, leaning ${detail.lean_team}`
+            : detail.shootout_score == null
+              ? ''
+              : ', evenly split'}
+          {detail.total_line != null
+            ? ` (total ${Number(detail.total_line).toFixed(1)}${
+                detail.spread_line != null
+                  ? `, spread ${Number(detail.spread_line) > 0 ? '+' : ''}${Number(detail.spread_line).toFixed(1)}`
+                  : ''
+              })`
+            : ''}
+        </Text>
+        {detail.total_line == null && (
+          <Text style={styles.envTextMuted}>
+            No betting line published yet. The talent gap is unaffected; the scoring
+            read is built from the units and pace alone.
+          </Text>
+        )}
+      </View>
+
+      <Text style={styles.sectionTitle}>Coaching staffs</Text>
+      <View style={[styles.staffRow, !sideBySideStaff && styles.staffColumn]}>
+        <StaffCard profile={detail.detail.away} meta={meta} stacked={!sideBySideStaff} />
+        <StaffCard profile={detail.detail.home} meta={meta} stacked={!sideBySideStaff} />
+      </View>
+
+      <Text style={styles.sectionTitle}>Lane edges</Text>
+      <Text style={styles.sectionHint}>
+        Each unit’s percentile against the same unit league-wide, minus how well the
+        opponent defends it. Positive favours the offense.
+      </Text>
+      {[...detail.detail.edges]
+        .filter((e) => e.edge != null)
+        .sort((a, b) => Math.abs(b.edge!) - Math.abs(a.edge!))
+        .map((e) => (
+          <View key={`${e.lane}-${e.label}`} style={styles.edgeRow}>
+            <View style={styles.edgeMain}>
+              <Text style={styles.edgeLabel} numberOfLines={1}>
+                {e.label}
+              </Text>
+              <Text style={styles.edgeSub} numberOfLines={1}>
+                {unitLabels.get(e.lane) ?? e.lane} · unit{' '}
+                {e.offenseStrength == null ? '—' : e.offenseStrength.toFixed(0)} vs defense{' '}
+                {e.defenseStrength == null ? '—' : e.defenseStrength.toFixed(0)}
+              </Text>
+            </View>
+            <Text style={[styles.edgeValue, { color: edgeColor(e.edge) }]}>
+              {e.edge! > 0 ? '+' : ''}
+              {e.edge!.toFixed(0)}
+            </Text>
+          </View>
+        ))}
+
+      <Text style={styles.sectionTitle}>{listTitle}</Text>
+      {/*
+        Seven chips never fit across a phone, and wrapping them to two rows
+        pushes the list itself below the fold. Scrolling sideways keeps the
+        whole set reachable at any width; where they already fit, there is
+        nothing to scroll.
+      */}
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={styles.filterRow}
+        style={styles.filterScroll}
+      >
+        {chips.map((c) => (
+          <Pressable
+            key={c.key}
+            onPress={() => setFilter(c.key)}
+            style={[styles.filterChip, filter === c.key && styles.filterChipActive]}
+          >
+            <Text style={[styles.filterText, filter === c.key && styles.filterTextActive]}>
+              {c.label}
+            </Text>
+          </Pressable>
+        ))}
+      </ScrollView>
+
+      {filter === 'skill' ? (
+        players.map((p) => (
+          <PlayerMatchupRow key={p.gsis_id} player={p} onPress={onSelectPlayer} />
+        ))
+      ) : starters.length === 0 ? (
+        <Text style={styles.sectionHint}>
+          {filterUnit === 'special'
+            ? 'Nobody on this unit carries a ranking yet.'
+            : 'No depth chart published for this team yet.'}
+        </Text>
+      ) : (
+        <>
+          <Text style={styles.sectionHint}>
+            One player per slot on the published depth chart. Backups are not listed,
+            and the number is his overall ranking score.
+            {filterUnit === 'special'
+              ? ' Kickers, punters and snappers are not ranked yet, so they are held back.'
+              : ''}
+          </Text>
+          {starters.map((s) => (
+            <StarterRow key={`${s.gsis_id}-${s.role}-${s.slot ?? ''}`} starter={s} />
+          ))}
+        </>
+      )}
+
+      <View style={styles.footer} />
+    </ScrollView>
+  );
+}
+
+function StaffCard({
+  profile,
+  meta,
+  stacked,
+}: {
+  profile: SideProfile;
+  meta: MatchupMeta;
+  /** Stacked cards own the full width, so they must not share height as flex children. */
+  stacked: boolean;
+}) {
+  const offenseSource = tendencySourceLabel(profile.offense.source, profile.coach);
+  const byKey = (side: 'offense' | 'defense') =>
+    new Map(profile[side].metrics.map((m) => [m.metric, m]));
+
+  const offense = byKey('offense');
+  const defense = byKey('defense');
+  const labels = new Map(
+    [...meta.offenseTendencies, ...meta.defenseTendencies].map((t) => [t.key, t]),
+  );
+
+  return (
+    <View style={[styles.staffCard, stacked && styles.staffCardStacked]}>
+      <Text style={styles.staffTeam}>{profile.team}</Text>
+      <Text style={styles.staffCoach} numberOfLines={1}>
+        {profile.coach ?? 'Unknown'}
+      </Text>
+      <Text style={[styles.staffSource, { color: offenseSource.color }]} numberOfLines={2}>
+        {offenseSource.label}
+        {profile.offense.source === 'coach' ? ` · ${profile.offense.nGames}g` : ''}
+      </Text>
+
+      <Text style={styles.staffSection}>Offense</Text>
+      {HEADLINE_OFFENSE.map((key) => {
+        const m = offense.get(key);
+        const def = labels.get(key);
+        if (!m || !def) return null;
+        return (
+          <TendencyLine
+            key={key}
+            label={def.label}
+            value={formatTendency(m.value, def.unit)}
+            rank={m.rank}
+            rankOf={m.rankOf}
+          />
+        );
+      })}
+
+      <Text style={styles.staffSection}>Defense</Text>
+      {HEADLINE_DEFENSE.map((key) => {
+        const m = defense.get(key);
+        const def = labels.get(key);
+        if (!m || !def) return null;
+        return (
+          <TendencyLine
+            key={key}
+            label={def.label}
+            value={formatTendency(m.value, def.unit)}
+            rank={m.rank}
+            rankOf={m.rankOf}
+          />
+        );
+      })}
+    </View>
+  );
+}
+
+/**
+ * Ordinal form of a placing: 1st, 2nd, 3rd, 11th.
+ *
+ * The teens are the case a naive implementation gets wrong — 13 is thirteenth,
+ * not thirteen-th-as-in-third.
+ */
+function ordinal(n: number): string {
+  const lastTwo = n % 100;
+  if (lastTwo >= 11 && lastTwo <= 13) return `${n}th`;
+  switch (n % 10) {
+    case 1: return `${n}st`;
+    case 2: return `${n}nd`;
+    case 3: return `${n}rd`;
+    default: return `${n}th`;
+  }
+}
+
+/**
+ * One tendency: the number, and where it places in the league.
+ *
+ * A rank needs no explaining — 1st of 32 is the most in the league and 32nd is
+ * the least, which is what a reader wants from this card. Percentiles said the
+ * same thing in a vocabulary that assumes a statistics background.
+ *
+ * The bar is drawn from the rank rather than the raw value, because the raw
+ * values share no scale: seconds per play would overflow the track, EPA would
+ * be invisible on it, and a 22% blitz rate and a 22% tight-end target share
+ * would draw the same bar despite being a heavy blitz rate and an ordinary
+ * target share. Drawing it from the rank also keeps the bar and the words
+ * saying the same thing, which is what went wrong when it was drawn from a
+ * percentile sitting beside an unrelated number.
+ */
+function TendencyLine({
+  label,
+  value,
+  rank,
+  rankOf,
+}: {
+  label: string;
+  value: string;
+  rank: number | null;
+  rankOf: number | null;
+}) {
+  const placed = rank != null && rankOf != null && rankOf > 0;
+  // 1st fills the track, last leaves one slot showing.
+  const fill = placed ? ((rankOf - rank + 1) / rankOf) * 100 : 0;
+
+  return (
+    <View style={styles.tendency}>
+      <View style={styles.tendencyHead}>
+        <Text style={styles.tendencyLabel} numberOfLines={1}>
+          {label}
+        </Text>
+        <Text style={styles.tendencyValue}>{value}</Text>
+      </View>
+      <View style={styles.tendencyTrack}>
+        <View
+          style={[
+            styles.tendencyFill,
+            {
+              width: `${fill}%`,
+              backgroundColor: placed ? theme.accent : theme.textFaint,
+            },
+          ]}
+        />
+      </View>
+      <Text style={styles.tendencyNote} numberOfLines={1}>
+        {placed ? `${ordinal(rank)} of ${rankOf}` : 'Not ranked'}
+      </Text>
+    </View>
+  );
+}
+
+function PlayerMatchupRow({
+  player,
+  onPress,
+}: {
+  player: MatchupPlayer;
+  onPress: (player: MatchupPlayer) => void;
+}) {
+  const score = Number(player.matchup_score);
+  const edge = player.lane_edge == null ? null : Number(player.lane_edge);
+
+  return (
+    <Pressable
+      style={({ pressed }) => [styles.playerRow, pressed && styles.rowPressed]}
+      onPress={() => onPress(player)}
+    >
+      <View style={styles.playerMain}>
+        <Text style={styles.playerName} numberOfLines={1}>
+          {player.display_name}
+        </Text>
+        <Text style={styles.playerMeta} numberOfLines={1}>
+          {player.team} · {player.position}
+          {player.pos_rank != null ? `${player.pos_rank}` : ''} ·{' '}
+          {player.detail?.laneLabel ?? ''}
+        </Text>
+        <Text style={[styles.playerEdge, { color: edgeColor(edge) }]} numberOfLines={1}>
+          {edge == null
+            ? 'Matchup not gradeable'
+            : `${edge > 0 ? '+' : ''}${edge.toFixed(0)} unit edge · ${
+                player.composite == null
+                  ? 'unranked'
+                  : `${Number(player.composite).toFixed(0)} ranking`
+              } · ${Number(player.volume_score).toFixed(0)} volume`}
+        </Text>
+        {player.actual_points != null && (
+          <Text style={styles.playerActual} numberOfLines={1}>
+            {`Scored ${Number(player.actual_points).toFixed(1)} PPR`}
+            {player.predicted_rank != null && player.actual_rank != null
+              ? ` · ranked #${player.predicted_rank}, finished #${player.actual_rank}`
+              : ''}
+            {statLine(player.actual_line)}
+          </Text>
+        )}
+        {player.detail?.tendencySource === 'team' && (
+          <Text style={styles.playerCaveat}>Scheme profile is the team’s, not this staff’s</Text>
+        )}
+      </View>
+      <View style={styles.playerScoreCol}>
+        <Text style={[styles.playerScore, { color: scoreColor(score) }]}>
+          {score.toFixed(0)}
+        </Text>
+        {player.actual_points != null && (
+          <Text style={styles.playerActualPoints}>
+            {Number(player.actual_points).toFixed(1)}
+          </Text>
+        )}
+      </View>
+    </Pressable>
+  );
+}
+
+/** Compact real stat line, only for the categories a player actually produced in. */
+function statLine(line: MatchupPlayer['actual_line']): string {
+  if (!line) return '';
+  const parts: string[] = [];
+  if (line.passingYards) parts.push(`${line.passingYards.toFixed(0)} pass yd`);
+  if (line.rushingYards) parts.push(`${line.rushingYards.toFixed(0)} rush yd`);
+  if (line.receptions) parts.push(`${line.receptions}/${line.targets ?? '?'} rec`);
+  if (line.receivingYards) parts.push(`${line.receivingYards.toFixed(0)} rec yd`);
+  if (line.tds) parts.push(`${line.tds} TD`);
+  return parts.length > 0 ? ` · ${parts.join(', ')}` : '';
+}
+
+/**
+ * One line of a starting lineup.
+ *
+ * The role, not the position, leads the row: on a depth chart 'LCB' and 'RCB'
+ * are two different jobs that both normalise to 'CB', and which side of the
+ * field a corner lines up on is exactly the sort of thing this list exists to
+ * show. Kickers, punters, snappers and returners carry no ranking — they are
+ * outside the cohorts this app scores — so their score column reads as blank
+ * rather than as a zero.
+ */
+function StarterRow({ starter }: { starter: MatchupStarter }) {
+  const composite = starter.composite;
+
+  return (
+    <View style={styles.starterRow}>
+      <Text style={styles.starterRole}>{starter.role}</Text>
+      <View style={styles.starterMain}>
+        <Text style={styles.starterName} numberOfLines={1}>
+          {starter.display_name}
+        </Text>
+        <Text style={styles.starterMeta} numberOfLines={1}>
+          {starter.role_name ?? starter.position ?? ''}
+          {starter.position_rank != null && starter.position != null
+            ? ` · ${starter.position}${starter.position_rank}`
+            : ''}
+        </Text>
+      </View>
+      <Text style={[styles.starterScore, { color: scoreColor(composite) }]}>
+        {composite == null ? '—' : composite.toFixed(0)}
+      </Text>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  screen: { flex: 1, backgroundColor: theme.bg },
+  content: { padding: 16, gap: 4 },
+  center: { flex: 1, backgroundColor: theme.bg, justifyContent: 'center', padding: 28, gap: 12 },
+  back: { paddingVertical: 6 },
+  backText: { color: theme.accent, fontSize: getPixels(15), fontWeight: '600' },
+  errorBody: { color: theme.danger, fontSize: getPixels(13) },
+
+  hero: { alignItems: 'center', paddingVertical: 12 },
+  teams: { color: theme.text, fontSize: getPixels(26), fontWeight: '800', letterSpacing: 0.5 },
+  at: { color: theme.textFaint, fontWeight: '500' },
+  kickoff: { color: theme.textDim, fontSize: getPixels(12), marginTop: 3 },
+  finalScore: {
+    color: theme.text,
+    fontSize: getPixels(15),
+    fontWeight: '800',
+    marginTop: 6,
+    letterSpacing: 0.4,
+  },
+  heroScore: { fontSize: getPixels(46), fontWeight: '900', marginTop: 8, fontVariant: ['tabular-nums'] },
+  heroLabel: { color: theme.textDim, fontSize: getPixels(11), textAlign: 'center' },
+
+  buildButton: {
+    backgroundColor: theme.accent,
+    borderRadius: 10,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    marginTop: 12,
+  },
+  buildPressed: { opacity: 0.85 },
+  buildLabel: { color: '#08131F', fontSize: getPixels(14.5), fontWeight: '800' },
+  buildMeta: { color: '#0C2237', fontSize: getPixels(11), fontWeight: '600', marginTop: 2, lineHeight: getPixels(15) },
+
+  envRow: {
+    backgroundColor: theme.surface,
+    borderRadius: 10,
+    padding: 12,
+    marginTop: 8,
+    marginBottom: 4,
+  },
+  envText: { color: theme.textDim, fontSize: getPixels(12), lineHeight: getPixels(18) },
+  resultRow: { borderLeftWidth: 3, borderLeftColor: theme.production, gap: 6 },
+  resultHeadline: { color: theme.text, fontSize: getPixels(13), fontWeight: '700', lineHeight: getPixels(19) },
+  resultCaveat: { color: theme.warn, fontSize: getPixels(11), lineHeight: getPixels(16) },
+  envTextMuted: { color: theme.warn, fontSize: getPixels(12), lineHeight: getPixels(18) },
+
+  sectionTitle: {
+    color: theme.text,
+    fontSize: getPixels(17),
+    fontWeight: '700',
+    marginTop: 22,
+    marginBottom: 4,
+  },
+  sectionHint: { color: theme.textFaint, fontSize: getPixels(11.5), lineHeight: getPixels(17), marginBottom: 8 },
+
+  staffRow: { flexDirection: 'row', gap: 10 },
+  staffColumn: { flexDirection: 'column' },
+  staffCard: {
+    flex: 1,
+    backgroundColor: theme.surface,
+    borderRadius: 10,
+    padding: 12,
+    gap: 2,
+  },
+  staffCardStacked: { flex: 0, alignSelf: 'stretch' },
+  staffTeam: { color: theme.text, fontSize: getPixels(18), fontWeight: '800' },
+  staffCoach: { color: theme.textDim, fontSize: getPixels(12.5), fontWeight: '600' },
+  staffSource: { fontSize: getPixels(10), fontWeight: '600', marginTop: 2, lineHeight: getPixels(14) },
+  staffSection: {
+    color: theme.textFaint,
+    fontSize: getPixels(10),
+    fontWeight: '700',
+    letterSpacing: 0.6,
+    marginTop: 10,
+    textTransform: 'uppercase',
+  },
+
+  tendency: { marginTop: 6 },
+  tendencyHead: { flexDirection: 'row', justifyContent: 'space-between', gap: 6 },
+  tendencyLabel: { color: theme.textDim, fontSize: getPixels(10.5), flex: 1 },
+  tendencyValue: {
+    color: theme.text,
+    fontSize: getPixels(10.5),
+    fontWeight: '700',
+    fontVariant: ['tabular-nums'],
+  },
+  tendencyTrack: {
+    height: 3,
+    backgroundColor: theme.surfaceAlt,
+    borderRadius: 2,
+    marginTop: 3,
+    overflow: 'hidden',
+  },
+  tendencyFill: { height: 3, borderRadius: 2 },
+  tendencyNote: { color: theme.textFaint, fontSize: getPixels(9.5), marginTop: 2 },
+
+  edgeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingVertical: 9,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: theme.border,
+  },
+  edgeMain: { flex: 1 },
+  edgeLabel: { color: theme.text, fontSize: getPixels(13.5), fontWeight: '600' },
+  edgeSub: { color: theme.textFaint, fontSize: getPixels(10.5), marginTop: 1 },
+  edgeValue: { fontSize: getPixels(17), fontWeight: '800', fontVariant: ['tabular-nums'], width: 46, textAlign: 'right' },
+
+  filterScroll: { marginBottom: 6, marginHorizontal: -16 },
+  // Padded to the screen margin the ScrollView just cancelled, so the first
+  // and last chip clear the edges while the row still scrolls edge to edge.
+  filterRow: { flexDirection: 'row', gap: 8, paddingHorizontal: 16 },
+  filterChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 14,
+    backgroundColor: theme.surface,
+    borderWidth: 1,
+    borderColor: theme.border,
+  },
+  filterChipActive: { backgroundColor: theme.accent, borderColor: theme.accent },
+  filterText: { color: theme.textDim, fontSize: getPixels(12), fontWeight: '600' },
+  filterTextActive: { color: '#04101C' },
+
+  playerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingVertical: 10,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: theme.border,
+  },
+  rowPressed: { backgroundColor: theme.surfaceAlt },
+  playerMain: { flex: 1, gap: 2 },
+  playerName: { color: theme.text, fontSize: getPixels(15), fontWeight: '600' },
+  playerMeta: { color: theme.textDim, fontSize: getPixels(11) },
+  playerEdge: { fontSize: getPixels(11), fontWeight: '600' },
+  playerCaveat: { color: theme.warn, fontSize: getPixels(10) },
+  playerActual: { color: theme.production, fontSize: getPixels(10.5), fontWeight: '600' },
+  playerScoreCol: { width: 46, alignItems: 'flex-end' },
+  playerActualPoints: {
+    color: theme.production,
+    fontSize: getPixels(12),
+    fontWeight: '700',
+    fontVariant: ['tabular-nums'],
+  },
+  playerScore: { fontSize: getPixels(22), fontWeight: '800', fontVariant: ['tabular-nums'], textAlign: 'right' },
+
+  starterRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingVertical: 7,
+    borderBottomWidth: 1,
+    borderBottomColor: theme.border,
+  },
+  // Wide enough for the longest depth-chart abbreviation ('LILB') so the names
+  // beside them line up down the column.
+  starterRole: {
+    color: theme.textFaint,
+    fontSize: getPixels(10.5),
+    fontWeight: '800',
+    letterSpacing: 0.4,
+    width: 44,
+  },
+  starterMain: { flex: 1 },
+  starterName: { color: theme.text, fontSize: getPixels(14), fontWeight: '600' },
+  starterMeta: { color: theme.textFaint, fontSize: getPixels(10.5), marginTop: 1 },
+  starterScore: {
+    fontSize: getPixels(17),
+    fontWeight: '800',
+    fontVariant: ['tabular-nums'],
+    textAlign: 'right',
+    minWidth: 34,
+  },
+
+  footer: { height: 40 },
+});

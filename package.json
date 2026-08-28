@@ -1,0 +1,26 @@
+{
+  "name": "dfshelper",
+  "private": true,
+  "version": "0.1.0",
+  "workspaces": [
+    "packages/shared",
+    "packages/server"
+  ],
+  "scripts": {
+    "build": "npm run build -w @dfs/shared && npm run build -w @dfs/server",
+    "test": "npm run test -w @dfs/shared",
+    "db:migrate": "npm run migrate -w @dfs/server",
+    "db:ingest": "npm run ingest -w @dfs/server",
+    "db:refresh": "npm run refresh -w @dfs/server",
+    "api": "npm run dev -w @dfs/server",
+    "app": "npm start -w @dfs/app",
+    "db:ingest:college": "npm run ingest:college -w @dfs/server",
+    "db:ingest:matchups": "npm run ingest:matchups -w @dfs/server",
+    "db:matchups": "npm run matchups -w @dfs/server",
+    "db:matchups:bestball": "npm run matchups -w @dfs/server -- --season",
+    "db:prune": "npm run prune -w @dfs/server"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

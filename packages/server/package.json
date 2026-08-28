@@ -1,0 +1,33 @@
+{
+  "name": "@dfs/server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "migrate": "node --experimental-strip-types src/migrate.ts",
+    "ingest": "node --experimental-strip-types src/ingest/index.ts",
+    "rank": "node --experimental-strip-types src/rankings.ts",
+    "refresh": "node --experimental-strip-types src/refresh.ts",
+    "dev": "node --experimental-strip-types --watch src/index.ts",
+    "start": "node --experimental-strip-types src/index.ts",
+    "ingest:college": "node --experimental-strip-types src/ingest/college.ts",
+    "ingest:matchups": "node --experimental-strip-types src/ingest/matchup-data.ts",
+    "matchups": "node --experimental-strip-types src/matchups.ts",
+    "ingest:dk": "node --experimental-strip-types src/ingest/dk-salaries.ts",
+    "lineup": "node --experimental-strip-types src/lineups.ts",
+    "prune": "node --experimental-strip-types src/prune.ts"
+  },
+  "dependencies": {
+    "@dfs/shared": "*",
+    "csv-parse": "^5.6.0",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "postgres": "^3.4.5"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.0",
+    "@types/node": "^22.10.2",
+    "typescript": "^5.7.2"
+  }
+}
