@@ -1,4 +1,5 @@
 import { PixelRatio } from 'react-native';
+import { t } from './i18n';
 
 export const theme = {
   bg: '#0B0F14',
@@ -30,11 +31,11 @@ export function confidenceLabel(confidence: number): {
   label: string;
   color: string;
 } {
-  if (confidence >= 0.85) return { label: 'Full workout', color: theme.production };
-  if (confidence >= 0.6) return { label: 'Most drills', color: '#A3E635' };
-  if (confidence >= 0.35) return { label: 'Partial', color: theme.warn };
-  if (confidence > 0) return { label: 'Sparse', color: theme.danger };
-  return { label: 'No workout', color: theme.textFaint };
+  if (confidence >= 0.85) return { label: t('confidence.full'), color: theme.production };
+  if (confidence >= 0.6) return { label: t('confidence.most'), color: '#A3E635' };
+  if (confidence >= 0.35) return { label: t('confidence.partial'), color: theme.warn };
+  if (confidence > 0) return { label: t('confidence.sparse'), color: theme.danger };
+  return { label: t('confidence.none'), color: theme.textFaint };
 }
 
 export function getPixels(size: number): number {

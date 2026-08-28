@@ -15,16 +15,25 @@ import {
   type RankedPlayer,
 } from '../api';
 import { ScoreSplitBar } from '../components/ScoreSplitBar';
+import { t as translate, useTranslation, type MessageKey } from '../i18n';
 import { confidenceLabel, getPixels, scoreColor, theme } from '../theme';
 
-const DRILL_UNITS: Record<string, string> = {
-  forty: 's',
-  cone: 's',
-  shuttle: 's',
-  bench: ' reps',
-  vertical: '"',
-  broad: '"',
+const DRILL_UNIT_KEYS: Record<string, MessageKey> = {
+  forty: 'drill.unit.seconds',
+  cone: 'drill.unit.seconds',
+  shuttle: 'drill.unit.seconds',
+  bench: 'drill.unit.reps',
+  vertical: 'drill.unit.inches',
+  broad: 'drill.unit.inches',
 };
+
+function drillUnits(): Record<string, string> {
+  return Object.fromEntries(
+    Object.entries(DRILL_UNIT_KEYS).map(([drill, key]) => [drill, translate(key)]),
+  );
+}
+
+const NO_VALUE = '—';
 
 export type PlayerRef = Pick<RankedPlayer, 'gsis_id' | 'display_name' | 'position'> &
   Partial<RankedPlayer>;
@@ -32,12 +41,13 @@ export type PlayerRef = Pick<RankedPlayer, 'gsis_id' | 'display_name' | 'positio
 export function PlayerDetailScreen({
   player,
   onBack,
-  backLabel = 'Rankings',
+  backLabel = translate('app.back.rankings'),
 }: {
   player: PlayerRef;
   onBack: () => void;
   backLabel?: string;
 }) {
+  const { t } = useTranslation();
   const [detail, setDetail] = useState<PlayerDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -63,12 +73,14 @@ export function PlayerDetailScreen({
       <Text style={styles.meta}>
         {[
           view.position,
-          view.team ?? 'Free agent',
-          view.age != null ? `${Number(view.age).toFixed(1)} yrs old` : null,
-          view.years_experience != null ? `${view.years_experience} seasons` : null,
+          view.team ?? t('player.freeAgentLong'),
+          view.age != null ? t('player.ageYears', { age: Number(view.age).toFixed(1) }) : null,
+          view.years_experience != null
+            ? t('player.seasons', { count: view.years_experience })
+            : null,
         ]
           .filter(Boolean)
-          .join(' · ')}
+          .join(t('player.metaSeparator'))}
       </Text>
 
       <View style={styles.scoreCard}>
@@ -79,13 +91,16 @@ export function PlayerDetailScreen({
               { color: scoreColor(view.composite == null ? null : Number(view.composite)) },
             ]}
           >
-            {view.composite == null ? '—' : Number(view.composite).toFixed(1)}
+            {view.composite == null ? NO_VALUE : Number(view.composite).toFixed(1)}
           </Text>
-          <Text style={styles.compositeLabel}>Composite</Text>
+          <Text style={styles.compositeLabel}>{t('player.composite')}</Text>
         </View>
         <View style={styles.scoreRanks}>
-          <Rank label={`${view.position} rank`} value={view.position_rank} />
-          <Rank label="Overall" value={view.overall_rank} />
+          <Rank
+            label={t('player.positionRank', { position: view.position })}
+            value={view.position_rank}
+          />
+          <Rank label={t('player.overallRank')} value={view.overall_rank} />
         </View>
       </View>
 
@@ -97,36 +112,28 @@ export function PlayerDetailScreen({
       {detail && (
         <>
           {detail.detail.noRecentProduction && (
-            <Note tone="warn">
-              No NFL production on record for this player in the scoring window. After four
-              seasons the league's own usage is the verdict, so this score reflects absence
-              of production rather than a graded performance — the workout below is shown
-              for reference but does not feed the ranking.
-            </Note>
+            <Note tone="warn">{t('player.noRecentProduction')}</Note>
           )}
 
           {detail.detail.lowSignalMeasurables && (
-            <Note>
-              Quarterback combine drills measure mobility, not the throwing traits that
-              decide the position. This score leans on production by design.
-            </Note>
+            <Note>{t('player.lowSignalMeasurables')}</Note>
           )}
 
           <Component
-            title="Athletic"
-            subtitle="Position-weighted combine percentiles"
+            title={t('player.athleticTitle')}
+            subtitle={t('player.athleticSubtitle')}
             score={detail.detail.athletic.score}
             weight={Number(view.weight_athletic ?? 0)}
             confidence={detail.detail.athletic.confidence}
             metrics={detail.detail.athletic.metrics}
-            units={DRILL_UNITS}
+            units={drillUnits()}
             color={theme.athletic}
           />
 
           {detail.detail.college.score != null && (
             <Component
-              title="College"
-              subtitle="Per-game rates at the previous level"
+              title={t('player.collegeTitle')}
+              subtitle={t('player.collegeSubtitle')}
               score={detail.detail.college.score}
               weight={Number(view.weight_college ?? 0)}
               confidence={detail.detail.college.confidence}
@@ -137,15 +144,12 @@ export function PlayerDetailScreen({
           )}
 
           {detail.detail.lowSignalProduction && (
-            <Note>
-              No public feed grades individual offensive line play. The production figure
-              below is snap share — availability and trust, not blocking quality.
-            </Note>
+            <Note>{t('player.lowSignalProduction')}</Note>
           )}
 
           <Component
-            title="Production"
-            subtitle="Per-game rates, recent seasons"
+            title={t('player.productionTitle')}
+            subtitle={t('player.productionSubtitle')}
             score={detail.detail.production.score}
             weight={Number(view.weight_nfl ?? 0)}
             confidence={detail.detail.production.confidence}
@@ -156,23 +160,24 @@ export function PlayerDetailScreen({
 
           {detail.measurables.length > 0 && (
             <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Raw workout</Text>
+              <Text style={styles.sectionTitle}>{t('player.rawWorkout')}</Text>
               {detail.measurables.map((m, i) => (
                 <View key={i} style={styles.rawRow}>
                   <Text style={styles.rawSource}>
-                    {m.source} {m.season ?? ''} {m.school ? `· ${m.school}` : ''}
+                    {m.source} {m.season ?? ''}{' '}
+                    {m.school ? t('player.rawSchool', { school: m.school }) : ''}
                   </Text>
                   <Text style={styles.rawValues}>
                     {[
-                      m.forty && `40: ${m.forty}`,
-                      m.bench != null && `Bench: ${m.bench}`,
-                      m.vertical && `Vert: ${m.vertical}"`,
-                      m.broad != null && `Broad: ${m.broad}"`,
-                      m.cone && `3C: ${m.cone}`,
-                      m.shuttle && `Shuttle: ${m.shuttle}`,
+                      m.forty && t('drill.forty', { value: m.forty }),
+                      m.bench != null && t('drill.bench', { value: m.bench }),
+                      m.vertical && t('drill.vertical', { value: m.vertical }),
+                      m.broad != null && t('drill.broad', { value: m.broad }),
+                      m.cone && t('drill.cone', { value: m.cone }),
+                      m.shuttle && t('drill.shuttle', { value: m.shuttle }),
                     ]
                       .filter(Boolean)
-                      .join('   ') || 'No drills recorded'}
+                      .join('   ') || t('player.noDrills')}
                   </Text>
                 </View>
               ))}
@@ -203,6 +208,7 @@ function Component({
   units: Record<string, string>;
   color: string;
 }) {
+  const { t } = useTranslation();
   const conf = confidenceLabel(confidence);
 
   return (
@@ -213,23 +219,24 @@ function Component({
           <Text style={styles.sectionSub}>{subtitle}</Text>
         </View>
         <Text style={[styles.sectionScore, { color: scoreColor(score) }]}>
-          {score == null ? '—' : score.toFixed(0)}
+          {score == null ? NO_VALUE : score.toFixed(0)}
         </Text>
       </View>
 
       <View style={styles.confRow}>
         <View style={[styles.dot, { backgroundColor: conf.color }]} />
         <Text style={styles.confText}>
-          {conf.label} · {Math.round(confidence * 100)}% recorded ·{' '}
-          {Math.round(weight * 100)}% of this ranking
+          {t('player.confidenceLine', {
+            label: conf.label,
+            recorded: Math.round(confidence * 100),
+            weight: Math.round(weight * 100),
+          })}
         </Text>
       </View>
 
       {confidence < 1 && confidence > 0 && (
         <Text style={styles.shrinkNote}>
-          This score covers only what was recorded, undiscounted. The{' '}
-          {Math.round((1 - confidence) * 100)}% that wasn’t measured simply carries less
-          weight — it is never held against the player.
+          {t('player.shrinkNote', { unmeasured: Math.round((1 - confidence) * 100) })}
         </Text>
       )}
 
@@ -249,6 +256,7 @@ function MetricBar({
   unit: string;
   color: string;
 }) {
+  const { t } = useTranslation();
   const measured = metric.percentile != null;
   return (
     <View style={styles.metric}>
@@ -256,9 +264,16 @@ function MetricBar({
         <Text style={[styles.metricLabel, !measured && styles.metricLabelDim]}>
           {metric.label}
         </Text>
-        <Text style={styles.metricWeight}>{Math.round(metric.weight * 100)}%</Text>
+        <Text style={styles.metricWeight}>
+          {t('player.metricWeight', { weight: Math.round(metric.weight * 100) })}
+        </Text>
         <Text style={[styles.metricRaw, !measured && styles.metricLabelDim]}>
-          {measured ? `${formatRaw(metric.raw, metric.metric)}${unit}` : 'not recorded'}
+          {measured
+            ? t('player.metricRaw', {
+                value: formatRaw(metric.raw, metric.metric),
+                unit,
+              })
+            : t('player.notRecorded')}
         </Text>
       </View>
       <View style={styles.metricTrack}>
@@ -272,7 +287,9 @@ function MetricBar({
         )}
       </View>
       <Text style={styles.metricPct}>
-        {metric.percentile != null ? `${metric.percentile.toFixed(0)}th percentile` : '—'}
+        {metric.percentile != null
+          ? t('player.percentile', { percentile: metric.percentile.toFixed(0) })
+          : NO_VALUE}
       </Text>
     </View>
   );
@@ -287,17 +304,23 @@ const PROPORTION_METRICS = new Set([
 ]);
 
 function formatRaw(raw: number | null, metric: string): string {
-  if (raw == null) return '—';
+  if (raw == null) return NO_VALUE;
   const value = Number(raw);
-  if (PROPORTION_METRICS.has(metric)) return `${(value * 100).toFixed(1)}%`;
+  if (PROPORTION_METRICS.has(metric)) {
+    return translate('tendency.percent', { value: (value * 100).toFixed(1) });
+  }
   if (metric.includes('_per_')) return value.toFixed(3);
   return Number.isInteger(value) ? String(value) : value.toFixed(2);
 }
 
 function Rank({ label, value }: { label: string; value: number | null | undefined }) {
+  const { t } = useTranslation();
+
   return (
     <View style={styles.rank}>
-      <Text style={styles.rankValue}>{value == null ? '—' : `#${value}`}</Text>
+      <Text style={styles.rankValue}>
+        {value == null ? NO_VALUE : t('player.rankValue', { value })}
+      </Text>
       <Text style={styles.rankLabel}>{label}</Text>
     </View>
   );

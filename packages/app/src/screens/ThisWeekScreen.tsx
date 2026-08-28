@@ -19,7 +19,8 @@ import {
   type WeekBlock,
 } from '../api';
 import { MatchupRow } from '../components/MatchupRow';
-import { GAME_SHAPES } from '../matchupFormat';
+import { Trans, useTranslation } from '../i18n';
+import { gameShapeCopy } from '../matchupFormat';
 import { getPixels, theme } from '../theme';
 
 export function ThisWeekScreen({
@@ -29,6 +30,7 @@ export function ThisWeekScreen({
   onSelectGame: (game: MatchupSummary) => void;
   onBuildLineup: (slate: SlateSummary, strategy: StrategyDefinition) => void;
 }) {
+  const { t } = useTranslation();
   const [current, setCurrent] = useState<WeekBlock | null>(null);
   const [previous, setPrevious] = useState<WeekBlock | null>(null);
   const [slates, setSlates] = useState<SlateSummary[]>([]);
@@ -67,11 +69,14 @@ export function ThisWeekScreen({
   if (error) {
     return (
       <View style={styles.center}>
-        <Text style={styles.errorTitle}>Can’t reach the API</Text>
+        <Text style={styles.errorTitle}>{t('error.unreachableTitle')}</Text>
         <Text style={styles.errorBody}>{error}</Text>
         <Text style={styles.errorHint}>
-          Expecting the server at {API_URL}. Start it with{' '}
-          <Text style={styles.mono}>npm run api</Text>.
+          <Trans
+            i18nKey="error.expectingServer"
+            values={{ url: API_URL }}
+            components={{ command: <Text style={styles.mono} /> }}
+          />
         </Text>
       </View>
     );
@@ -100,29 +105,27 @@ export function ThisWeekScreen({
       }
     >
       <View style={styles.header}>
-        <Text style={styles.title}>{current?.label ?? 'This week'}</Text>
+        <Text style={styles.title}>{current?.label ?? t('week.title')}</Text>
         <Text style={styles.subtitle}>
           {current
-            ? `${current.games.length} games · grouped by what kind of game it is`
-            : 'No upcoming week'}
+            ? t('week.subtitle', { games: current.games.length })
+            : t('week.noUpcoming')}
         </Text>
       </View>
 
       {current?.upcoming && (
         <View style={styles.notice}>
-          <Text style={styles.noticeText}>
-            Nothing has kicked off yet, so every number here is a forecast built from
-            prior seasons. Predictions are frozen once a game goes final, so what you
-            see now is what gets graded next week.
-          </Text>
+          <Text style={styles.noticeText}>{t('week.forecastNotice')}</Text>
         </View>
       )}
 
       {current?.missing && (
         <View style={styles.notice}>
           <Text style={styles.noticeText}>
-            No predictions built for this week yet. Run{' '}
-            <Text style={styles.mono}>npm run db:matchups</Text>.
+            <Trans
+              i18nKey="week.noPredictions"
+              components={{ command: <Text style={styles.mono} /> }}
+            />
           </Text>
         </View>
       )}
@@ -136,19 +139,15 @@ export function ThisWeekScreen({
       {previous && previous.games.length > 0 && (
         <>
           <View style={styles.header}>
-            <Text style={styles.sectionTitle}>{previous.label} · results</Text>
-            <Text style={styles.subtitle}>
-              What was ranked, against what actually happened
+            <Text style={styles.sectionTitle}>
+              {t('week.resultsTitle', { label: previous.label })}
             </Text>
+            <Text style={styles.subtitle}>{t('week.resultsSubtitle')}</Text>
           </View>
 
           {previous.games.some((g) => g.backfilled) && (
             <View style={[styles.notice, styles.noticeWarn]}>
-              <Text style={styles.noticeText}>
-                These grades were produced after the game was played, as a worked
-                example — not a forecast the model made in advance. Weeks predicted
-                ahead of kickoff will be marked as such.
-              </Text>
+              <Text style={styles.noticeText}>{t('week.backfilledNotice')}</Text>
             </View>
           )}
 
@@ -172,6 +171,7 @@ function ShapedList({
   order: GameShape[];
   onSelect: (game: MatchupSummary) => void;
 }) {
+  const { t } = useTranslation();
   const sections = order
     .map((shape) => ({ shape, games: games.filter((g) => g.game_shape === shape) }))
     .filter((section) => section.games.length > 0);
@@ -184,13 +184,7 @@ function ShapedList({
     <>
       {sections.map(({ shape, games: rows }) => (
         <View key={shape}>
-          <View style={styles.shapeHeader}>
-            <View style={[styles.shapeDot, { backgroundColor: GAME_SHAPES[shape].color }]} />
-            <View style={styles.shapeText}>
-              <Text style={styles.shapeTitle}>{GAME_SHAPES[shape].title}</Text>
-              <Text style={styles.shapeBlurb}>{GAME_SHAPES[shape].blurb}</Text>
-            </View>
-          </View>
+          <ShapeHeader {...gameShapeCopy(shape)} />
           {rows.map((g, i) => (
             <MatchupRow key={g.game_id} game={g} rank={i + 1} onPress={onSelect} />
           ))}
@@ -199,21 +193,37 @@ function ShapedList({
 
       {unclassified.length > 0 && (
         <View>
-          <View style={styles.shapeHeader}>
-            <View style={[styles.shapeDot, { backgroundColor: theme.textFaint }]} />
-            <View style={styles.shapeText}>
-              <Text style={styles.shapeTitle}>Not graded</Text>
-              <Text style={styles.shapeBlurb}>
-                Not enough roster or opponent data to say what kind of game this is.
-              </Text>
-            </View>
-          </View>
+          <ShapeHeader
+            title={t('week.ungradedTitle')}
+            blurb={t('week.ungradedBlurb')}
+            color={theme.textFaint}
+          />
           {unclassified.map((g, i) => (
             <MatchupRow key={g.game_id} game={g} rank={i + 1} onPress={onSelect} />
           ))}
         </View>
       )}
     </>
+  );
+}
+
+function ShapeHeader({
+  title,
+  blurb,
+  color,
+}: {
+  title: string;
+  blurb: string;
+  color: string;
+}) {
+  return (
+    <View style={styles.shapeHeader}>
+      <View style={[styles.shapeDot, { backgroundColor: color }]} />
+      <View style={styles.shapeText}>
+        <Text style={styles.shapeTitle}>{title}</Text>
+        <Text style={styles.shapeBlurb}>{blurb}</Text>
+      </View>
+    </View>
   );
 }
 
@@ -226,16 +236,17 @@ function LineupBar({
   strategies: StrategyDefinition[];
   onBuild: (slate: SlateSummary, strategy: StrategyDefinition) => void;
 }) {
+  const { t } = useTranslation();
   const multiGame = slates.filter((s) => s.contest !== 'showdown');
 
   if (multiGame.length === 0) {
     return (
       <View style={styles.notice}>
         <Text style={styles.noticeText}>
-          {slates.length > 0
-            ? 'No main-slate salaries imported for this week. A showdown is loaded, and it builds from its own game below. For the main slate, export it from the contest lobby and run '
-            : 'No DraftKings salaries imported for this week, so no lineup can be built. Export the slate from the contest lobby and run '}
-          <Text style={styles.mono}>npm run ingest:dk -- --file DKSalaries.csv</Text>.
+          <Trans
+            i18nKey={slates.length > 0 ? 'week.noMainSlate' : 'week.noSalaries'}
+            components={{ command: <Text style={styles.mono} /> }}
+          />
         </Text>
       </View>
     );
@@ -246,8 +257,7 @@ function LineupBar({
       {multiGame.map((slate) => (
         <View key={`${slate.contest}-${slate.game_id ?? 'all'}`} style={styles.slateBlock}>
           <Text style={styles.slateLabel}>
-            Main slate · {slate.games} {slate.games === 1 ? 'game' : 'games'} ·{' '}
-            {slate.players} priced
+            {t('week.slateLabel', { count: slate.games, players: slate.players })}
           </Text>
           {strategies.map((strategy) => (
             <Pressable

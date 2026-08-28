@@ -13,6 +13,7 @@ import {
 } from 'react-native';
 import { API_URL, fetchRankings, type RankedPlayer } from '../api';
 import { PLAYER_ROW_HEIGHT, PlayerRow } from '../components/PlayerRow';
+import { Trans, useTranslation } from '../i18n';
 import { getPixels, theme } from '../theme';
 
 const PAGE_SIZE = 50;
@@ -34,6 +35,7 @@ export function RankingsScreen({
 }: {
   onSelectPlayer: (player: RankedPlayer) => void;
 }) {
+  const { t } = useTranslation();
   const [position, setPosition] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
@@ -100,15 +102,15 @@ export function RankingsScreen({
     () => (
       <View>
         <View style={styles.header}>
-          <Text style={styles.title}>Rankings</Text>
+          <Text style={styles.title}>{t('rankings.title')}</Text>
           <Text style={styles.subtitle}>
-            {total.toLocaleString()} players · composite score
+            {t('rankings.subtitle', { total: total.toLocaleString() })}
           </Text>
         </View>
 
         <TextInput
           style={styles.search}
-          placeholder="Search players"
+          placeholder={t('rankings.searchPlaceholder')}
           placeholderTextColor={theme.textFaint}
           value={search}
           onChangeText={setSearch}
@@ -122,7 +124,11 @@ export function RankingsScreen({
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={styles.chips}
         >
-          <Chip label="All" active={position === null} onPress={() => setPosition(null)} />
+          <Chip
+            label={t('rankings.allPositions')}
+            active={position === null}
+            onPress={() => setPosition(null)}
+          />
           {POSITIONS.map((p) => (
             <Chip
               key={p}
@@ -134,19 +140,23 @@ export function RankingsScreen({
         </ScrollView>
       </View>
     ),
-    [position, search, total],
+    [position, search, total, t],
   );
 
   if (error) {
     return (
       <View style={styles.center}>
-        <Text style={styles.errorTitle}>Can’t reach the API</Text>
+        <Text style={styles.errorTitle}>{t('error.unreachableTitle')}</Text>
         <Text style={styles.errorBody}>{error}</Text>
         <Text style={styles.errorHint}>
-          Expecting the server at {API_URL}. Start it with{' '}
-          <Text style={styles.mono}>npm run api</Text>, or set{' '}
-          <Text style={styles.mono}>EXPO_PUBLIC_API_URL</Text> to your machine’s LAN address
-          if you’re on a physical device.
+          <Trans
+            i18nKey="error.expectingServerLan"
+            values={{ url: API_URL }}
+            components={{
+              command: <Text style={styles.mono} />,
+              envVar: <Text style={styles.mono} />,
+            }}
+          />
         </Text>
         <Pressable
           style={styles.retry}
@@ -155,7 +165,7 @@ export function RankingsScreen({
             load(0);
           }}
         >
-          <Text style={styles.retryText}>Retry</Text>
+          <Text style={styles.retryText}>{t('error.retry')}</Text>
         </Pressable>
       </View>
     );
@@ -191,7 +201,7 @@ export function RankingsScreen({
         loading ? (
           <ActivityIndicator style={styles.loader} color={theme.accent} />
         ) : (
-          <Text style={styles.empty}>No players match that filter.</Text>
+          <Text style={styles.empty}>{t('rankings.empty')}</Text>
         )
       }
       ListFooterComponent={

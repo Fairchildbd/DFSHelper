@@ -1,13 +1,14 @@
 import { memo } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { weightsOf, type RankedPlayer } from '../api';
+import { t as translate, useTranslation } from '../i18n';
 import { confidenceLabel, getPixels, scoreColor, theme } from '../theme';
 import { ScoreSplitBar } from './ScoreSplitBar';
 
 function roleNote(player: RankedPlayer): string | null {
-  if (player.position === 'QB' && player.rank_tier === 1) return 'Spot starter';
-  if (player.position === 'QB' && player.rank_tier === 2) return 'Backup — no starts';
-  if (player.qualified === false) return 'Too few snaps to rank';
+  if (player.position === 'QB' && player.rank_tier === 1) return translate('player.spotStarter');
+  if (player.position === 'QB' && player.rank_tier === 2) return translate('player.backupNoStarts');
+  if (player.qualified === false) return translate('player.tooFewSnaps');
   return null;
 }
 
@@ -28,6 +29,7 @@ export const PlayerRow = memo(function PlayerRow({
   player: RankedPlayer;
   onPress: (player: RankedPlayer) => void;
 }) {
+  const { t } = useTranslation();
   const confidence = confidenceLabel(Number(player.athletic_confidence ?? 0));
 
   return (
@@ -46,12 +48,12 @@ export const PlayerRow = memo(function PlayerRow({
         </Text>
         <Text style={styles.meta} numberOfLines={1}>
           {[
-            player.team ?? 'FA',
-            player.age != null ? `${Number(player.age).toFixed(0)}yr` : null,
-            `${player.years_experience ?? 0} exp`,
+            player.team ?? t('player.freeAgent'),
+            player.age != null ? t('player.age', { age: Number(player.age).toFixed(0) }) : null,
+            t('player.experience', { years: player.years_experience ?? 0 }),
           ]
             .filter(Boolean)
-            .join(' · ')}
+            .join(t('player.metaSeparator'))}
         </Text>
         <Text style={styles.unqualified} numberOfLines={1}>
           {roleNote(player) ?? ''}

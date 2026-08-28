@@ -10,6 +10,7 @@ import type {
 } from './src/api';
 import type { PlayerRef } from './src/screens/PlayerDetailScreen';
 import { ThisWeekScreen } from './src/screens/ThisWeekScreen';
+import { useTranslation, type MessageKey } from './src/i18n';
 import { getPixels, theme } from './src/theme';
 
 const AboutScreen = lazy(() =>
@@ -33,14 +34,15 @@ const RankingsScreen = lazy(() =>
 
 type Tab = 'week' | 'bestball' | 'rankings' | 'about';
 
-const TABS: Array<{ key: Tab; label: string }> = [
-  { key: 'week', label: 'This Week' },
-  { key: 'bestball', label: 'Best Ball' },
-  { key: 'rankings', label: 'Rankings' },
-  { key: 'about', label: 'About' },
+const TABS: Array<{ key: Tab; label: MessageKey }> = [
+  { key: 'week', label: 'app.tab.week' },
+  { key: 'bestball', label: 'app.tab.bestball' },
+  { key: 'rankings', label: 'app.tab.rankings' },
+  { key: 'about', label: 'app.tab.about' },
 ];
 
 export default function App() {
+  const { t } = useTranslation();
   const [tab, setTab] = useState<Tab>('week');
   const [game, setGame] = useState<MatchupSummary | null>(null);
   const [player, setPlayer] = useState<PlayerRef | null>(null);
@@ -66,7 +68,7 @@ export default function App() {
       <LineupScreen
         slate={build.slate}
         strategy={build.strategy}
-        backLabel={game ? 'Matchup' : 'This Week'}
+        backLabel={game ? t('app.back.matchup') : t('app.back.week')}
         label={game ? `${game.away_team} @ ${game.home_team}` : undefined}
         onBack={() => setBuild(null)}
       />
@@ -75,7 +77,7 @@ export default function App() {
     body = (
       <PlayerDetailScreen
         player={player}
-        backLabel={game ? 'Matchup' : 'Rankings'}
+        backLabel={game ? t('app.back.matchup') : t('app.back.rankings')}
         onBack={() => setPlayer(null)}
       />
     );
@@ -119,12 +121,12 @@ export default function App() {
 
         {showTabs && (
           <View style={styles.tabBar}>
-            {TABS.map((t) => (
+            {TABS.map((entry) => (
               <TabButton
-                key={t.key}
-                label={t.label}
-                active={tab === t.key}
-                onPress={() => setTab(t.key)}
+                key={entry.key}
+                label={t(entry.label)}
+                active={tab === entry.key}
+                onPress={() => setTab(entry.key)}
               />
             ))}
           </View>
