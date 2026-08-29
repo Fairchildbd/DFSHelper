@@ -1,6 +1,10 @@
-import { Suspense, lazy, useState } from 'react';
-import { ActivityIndicator, Pressable, StatusBar, StyleSheet, Text, View } from 'react-native';
-import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
+import { Suspense, lazy, useCallback, useState } from 'react';
+import { ActivityIndicator, StatusBar, View } from 'react-native';
+import {
+  SafeAreaProvider,
+  SafeAreaView,
+  useSafeAreaInsets,
+} from 'react-native-safe-area-context';
 import type {
   MatchupPlayer,
   MatchupSummary,
@@ -8,9 +12,10 @@ import type {
   SlateSummary,
   StrategyDefinition,
 } from './src/api';
+import { BottomInsetProvider, TabBar, tabBarSpace, type TabItem } from './src/components/ui';
 import type { PlayerRef } from './src/screens/PlayerDetailScreen';
 import { ThisWeekScreen } from './src/screens/ThisWeekScreen';
-import { getPixels, theme } from './src/theme';
+import { useStyles, useTheme, type Theme } from './src/theme';
 
 const AboutScreen = lazy(() =>
   import('./src/screens/AboutScreen').then((m) => ({ default: m.AboutScreen })),
@@ -33,14 +38,26 @@ const RankingsScreen = lazy(() =>
 
 type Tab = 'week' | 'bestball' | 'rankings' | 'about';
 
-const TABS: Array<{ key: Tab; label: string }> = [
-  { key: 'week', label: 'This Week' },
-  { key: 'bestball', label: 'Best Ball' },
-  { key: 'rankings', label: 'Rankings' },
-  { key: 'about', label: 'About' },
+const TABS: ReadonlyArray<TabItem<Tab>> = [
+  { key: 'week', label: 'This Week', icon: 'finance' },
+  { key: 'bestball', label: 'Best Ball', icon: 'star-outline' },
+  { key: 'rankings', label: 'Rankings', icon: 'crown-outline' },
+  { key: 'about', label: 'About', icon: 'information-outline' },
 ];
 
 export default function App() {
+  return (
+    <SafeAreaProvider>
+      <Shell />
+    </SafeAreaProvider>
+  );
+}
+
+function Shell() {
+  const t = useTheme();
+  const styles = useStyles(sheet);
+  const insets = useSafeAreaInsets();
+
   const [tab, setTab] = useState<Tab>('week');
   const [game, setGame] = useState<MatchupSummary | null>(null);
   const [player, setPlayer] = useState<PlayerRef | null>(null);
@@ -49,16 +66,28 @@ export default function App() {
     strategy: StrategyDefinition;
   } | null>(null);
 
-  const openFromRankings = (p: RankedPlayer) => setPlayer(p);
+  const openFromRankings = useCallback((p: RankedPlayer) => setPlayer(p), []);
 
-  const openFromMatchup = (p: MatchupPlayer) =>
-    setPlayer({
-      gsis_id: p.gsis_id,
-      display_name: p.display_name,
-      position: p.position,
-      team: p.team,
-      composite: p.composite == null ? undefined : Number(p.composite),
-    });
+  const openFromMatchup = useCallback(
+    (p: MatchupPlayer) =>
+      setPlayer({
+        gsis_id: p.gsis_id,
+        display_name: p.display_name,
+        position: p.position,
+        team: p.team,
+        composite: p.composite == null ? undefined : Number(p.composite),
+      }),
+    [],
+  );
+
+  const openGame = useCallback((g: MatchupSummary) => setGame(g), []);
+  const openBuild = useCallback(
+    (slate: SlateSummary, strategy: StrategyDefinition) => setBuild({ slate, strategy }),
+    [],
+  );
+  const closeGame = useCallback(() => setGame(null), []);
+  const closePlayer = useCallback(() => setPlayer(null), []);
+  const closeBuild = useCallback(() => setBuild(null), []);
 
   let body: React.ReactNode;
   if (build) {
@@ -68,7 +97,7 @@ export default function App() {
         strategy={build.strategy}
         backLabel={game ? 'Matchup' : 'This Week'}
         label={game ? `${game.away_team} @ ${game.home_team}` : undefined}
-        onBack={() => setBuild(null)}
+        onBack={closeBuild}
       />
     );
   } else if (player) {
@@ -76,27 +105,22 @@ export default function App() {
       <PlayerDetailScreen
         player={player}
         backLabel={game ? 'Matchup' : 'Rankings'}
-        onBack={() => setPlayer(null)}
+        onBack={closePlayer}
       />
     );
   } else if (game) {
     body = (
       <MatchupDetailScreen
         game={game}
-        onBack={() => setGame(null)}
+        onBack={closeGame}
         onSelectPlayer={openFromMatchup}
-        onBuildShowdown={(slate, strategy) => setBuild({ slate, strategy })}
+        onBuildShowdown={openBuild}
       />
     );
   } else if (tab === 'week') {
-    body = (
-      <ThisWeekScreen
-        onSelectGame={setGame}
-        onBuildLineup={(slate, strategy) => setBuild({ slate, strategy })}
-      />
-    );
+    body = <ThisWeekScreen onSelectGame={openGame} onBuildLineup={openBuild} />;
   } else if (tab === 'bestball') {
-    body = <BestBallScreen onSelectGame={setGame} />;
+    body = <BestBallScreen onSelectGame={openGame} />;
   } else if (tab === 'about') {
     body = <AboutScreen />;
   } else {
@@ -105,65 +129,25 @@ export default function App() {
 
   const showTabs = !player && !game && !build;
 
+  const bottomInset = showTabs ? tabBarSpace(insets.bottom) : insets.bottom + 12;
+
   return (
-    <SafeAreaProvider>
-      <SafeAreaView style={styles.root}>
-        <StatusBar barStyle="light-content" backgroundColor={theme.bg} />
-        <View style={styles.body}>
-          <Suspense
-            fallback={<ActivityIndicator style={styles.screenLoader} color={theme.accent} />}
-          >
+    <View style={styles.root}>
+      <StatusBar barStyle={t.mode === 'light' ? 'dark-content' : 'light-content'} />
+      <SafeAreaView style={styles.body} edges={['top', 'left', 'right']}>
+        <BottomInsetProvider value={bottomInset}>
+          <Suspense fallback={<ActivityIndicator style={styles.loader} color={t.accent} />}>
             {body}
           </Suspense>
-        </View>
-
-        {showTabs && (
-          <View style={styles.tabBar}>
-            {TABS.map((t) => (
-              <TabButton
-                key={t.key}
-                label={t.label}
-                active={tab === t.key}
-                onPress={() => setTab(t.key)}
-              />
-            ))}
-          </View>
-        )}
+        </BottomInsetProvider>
       </SafeAreaView>
-    </SafeAreaProvider>
+      {showTabs && <TabBar items={TABS} value={tab} onChange={setTab} />}
+    </View>
   );
 }
 
-function TabButton({
-  label,
-  active,
-  onPress,
-}: {
-  label: string;
-  active: boolean;
-  onPress: () => void;
-}) {
-  return (
-    <Pressable onPress={onPress} style={styles.tab}>
-      <Text style={[styles.tabText, active && styles.tabTextActive]}>{label}</Text>
-      <View style={[styles.tabRule, active && styles.tabRuleActive]} />
-    </Pressable>
-  );
-}
-
-const styles = StyleSheet.create({
-  screenLoader: { flex: 1, alignSelf: 'center', marginTop: 40 },
-  root: { flex: 1, backgroundColor: theme.bg },
+const sheet = (t: Theme) => ({
+  root: { flex: 1, backgroundColor: t.bg },
   body: { flex: 1 },
-  tabBar: {
-    flexDirection: 'row',
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: theme.border,
-    backgroundColor: theme.bg,
-  },
-  tab: { flex: 1, alignItems: 'center', paddingTop: 10, gap: 8 },
-  tabText: { color: theme.textDim, fontSize: getPixels(13), fontWeight: '700' },
-  tabTextActive: { color: theme.text },
-  tabRule: { height: 2, width: '55%', backgroundColor: 'transparent', borderRadius: 1 },
-  tabRuleActive: { backgroundColor: theme.accent },
+  loader: { flex: 1, alignSelf: 'center' as const, marginTop: 40 },
 });

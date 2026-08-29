@@ -3,17 +3,27 @@ import {
   ActivityIndicator,
   Dimensions,
   FlatList,
-  Pressable,
   RefreshControl,
-  ScrollView,
   StyleSheet,
-  Text,
   TextInput,
   View,
+  type LayoutChangeEvent,
 } from 'react-native';
 import { API_URL, fetchRankings, type RankedPlayer } from '../api';
 import { PLAYER_ROW_HEIGHT, PlayerRow } from '../components/PlayerRow';
-import { getPixels, theme } from '../theme';
+import {
+  AppBar,
+  Chip,
+  ChipRow,
+  Empty,
+  ErrorState,
+  Icon,
+  Mono,
+  PageTitle,
+  RoundButton,
+  useBottomInset,
+} from '../components/ui';
+import { getPixels, radius, useStyles, useTheme, type Theme } from '../theme';
 
 const PAGE_SIZE = 50;
 
@@ -34,6 +44,9 @@ export function RankingsScreen({
 }: {
   onSelectPlayer: (player: RankedPlayer) => void;
 }) {
+  const t = useTheme();
+  const styles = useStyles(sheet);
+
   const [position, setPosition] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
@@ -45,6 +58,15 @@ export function RankingsScreen({
   const [error, setError] = useState<string | null>(null);
 
   const requestId = useRef(0);
+
+  const bottomInset = useBottomInset();
+  const listPadding = useMemo(() => ({ paddingBottom: bottomInset + 12 }), [bottomInset]);
+
+  const [headerHeight, setHeaderHeight] = useState(0);
+  const measureHeader = useCallback((e: LayoutChangeEvent) => {
+    const next = e.nativeEvent.layout.height;
+    setHeaderHeight((current) => (Math.abs(current - next) > 1 ? next : current));
+  }, []);
 
   useEffect(() => {
     const timer = setTimeout(() => setDebouncedSearch(search.trim()), 300);
@@ -98,66 +120,59 @@ export function RankingsScreen({
 
   const header = useMemo(
     () => (
-      <View>
-        <View style={styles.header}>
-          <Text style={styles.title}>Rankings</Text>
-          <Text style={styles.subtitle}>
-            {total.toLocaleString()} players · composite score
-          </Text>
-        </View>
-
-        <TextInput
-          style={styles.search}
-          placeholder="Search players"
-          placeholderTextColor={theme.textFaint}
-          value={search}
-          onChangeText={setSearch}
-          autoCorrect={false}
-          autoCapitalize="none"
-          clearButtonMode="while-editing"
+      <View onLayout={measureHeader}>
+        <AppBar right={<RoundButton name="fire" />} />
+        <PageTitle
+          title="Rankings"
+          subtitle={`${total.toLocaleString()} players · composite score`}
         />
-
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.chips}
-        >
-          <Chip label="All" active={position === null} onPress={() => setPosition(null)} />
-          {POSITIONS.map((p) => (
-            <Chip
-              key={p}
-              label={p}
-              active={position === p}
-              onPress={() => setPosition(position === p ? null : p)}
-            />
-          ))}
-        </ScrollView>
+        <View style={styles.searchWrap}>
+          <Icon name="magnify" size={18} color={t.textFaint} />
+          <TextInput
+            style={styles.searchInput}
+            placeholder="Search players"
+            placeholderTextColor={t.textFaint}
+            value={search}
+            onChangeText={setSearch}
+            autoCorrect={false}
+            autoCapitalize="none"
+            clearButtonMode="while-editing"
+          />
+        </View>
+        <View style={styles.gutter}>
+          <ChipRow>
+            <Chip label="All" active={position === null} onPress={() => setPosition(null)} />
+            {POSITIONS.map((p) => (
+              <Chip
+                key={p}
+                label={p}
+                active={position === p}
+                onPress={() => setPosition(position === p ? null : p)}
+              />
+            ))}
+          </ChipRow>
+        </View>
       </View>
     ),
-    [position, search, total],
+    [position, search, total, styles, t, measureHeader],
   );
 
   if (error) {
     return (
-      <View style={styles.center}>
-        <Text style={styles.errorTitle}>Can’t reach the API</Text>
-        <Text style={styles.errorBody}>{error}</Text>
-        <Text style={styles.errorHint}>
-          Expecting the server at {API_URL}. Start it with{' '}
-          <Text style={styles.mono}>npm run api</Text>, or set{' '}
-          <Text style={styles.mono}>EXPO_PUBLIC_API_URL</Text> to your machine’s LAN address
-          if you’re on a physical device.
-        </Text>
-        <Pressable
-          style={styles.retry}
-          onPress={() => {
-            setLoading(true);
-            load(0);
-          }}
-        >
-          <Text style={styles.retryText}>Retry</Text>
-        </Pressable>
-      </View>
+      <ErrorState
+        message={error}
+        hint={
+          <>
+            Expecting the server at {API_URL}. Start it with <Mono>npm run api</Mono>, or set{' '}
+            <Mono>EXPO_PUBLIC_API_URL</Mono> to your machine’s LAN address if you’re on a
+            physical device.
+          </>
+        }
+        onRetry={() => {
+          setLoading(true);
+          load(0);
+        }}
+      />
     );
   }
 
@@ -168,19 +183,19 @@ export function RankingsScreen({
       renderItem={renderPlayer}
       getItemLayout={(_data, index) => ({
         length: PLAYER_ROW_HEIGHT,
-        offset: PLAYER_ROW_HEIGHT * index,
+        offset: headerHeight + PLAYER_ROW_HEIGHT * index,
         index,
       })}
       initialNumToRender={ROWS_ON_FIRST_PAINT}
       windowSize={VIEWPORTS_KEPT_MOUNTED}
       ListHeaderComponent={header}
-      stickyHeaderIndices={[]}
       onEndReached={handleEndReached}
       onEndReachedThreshold={0.5}
+      keyboardShouldPersistTaps="handled"
       refreshControl={
         <RefreshControl
           refreshing={refreshing}
-          tintColor={theme.textDim}
+          tintColor={t.textDim}
           onRefresh={() => {
             setRefreshing(true);
             load(0);
@@ -189,79 +204,43 @@ export function RankingsScreen({
       }
       ListEmptyComponent={
         loading ? (
-          <ActivityIndicator style={styles.loader} color={theme.accent} />
+          <ActivityIndicator style={styles.loader} color={t.accent} />
         ) : (
-          <Text style={styles.empty}>No players match that filter.</Text>
+          <Empty>No players match that filter.</Empty>
         )
       }
       ListFooterComponent={
-        loadingMore ? <ActivityIndicator style={styles.loader} color={theme.accent} /> : null
+        loadingMore ? <ActivityIndicator style={styles.loader} color={t.accent} /> : null
       }
       style={styles.list}
-      contentContainerStyle={players.length === 0 ? styles.flexGrow : undefined}
+      contentContainerStyle={[listPadding, players.length === 0 && styles.flexGrow]}
     />
   );
 }
 
-function Chip({
-  label,
-  active,
-  onPress,
-}: {
-  label: string;
-  active: boolean;
-  onPress: () => void;
-}) {
-  return (
-    <Pressable onPress={onPress} style={[styles.chip, active && styles.chipActive]}>
-      <Text style={[styles.chipText, active && styles.chipTextActive]}>{label}</Text>
-    </Pressable>
-  );
-}
-
-const styles = StyleSheet.create({
-  list: { flex: 1, backgroundColor: theme.bg },
+const sheet = (t: Theme) => ({
+  list: { flex: 1, backgroundColor: t.bg },
   flexGrow: { flexGrow: 1 },
-  header: { paddingHorizontal: 16, paddingTop: 8, paddingBottom: 12 },
-  title: { color: theme.text, fontSize: getPixels(30), fontWeight: '800', letterSpacing: -0.5 },
-  subtitle: { color: theme.textDim, fontSize: getPixels(13), marginTop: 2 },
-  search: {
+  gutter: { marginHorizontal: 16 },
+
+  searchWrap: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    gap: 8,
     marginHorizontal: 16,
-    backgroundColor: theme.surface,
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    color: theme.text,
+    paddingHorizontal: 13,
+    height: 44,
+    backgroundColor: t.surface,
+    borderRadius: radius.chip,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: t.border,
+  },
+  searchInput: {
+    flex: 1,
+    color: t.text,
     fontSize: getPixels(15),
-    borderWidth: 1,
-    borderColor: theme.border,
+    padding: 0,
   },
-  chips: { paddingHorizontal: 16, paddingVertical: 12, gap: 8 },
-  chip: {
-    paddingHorizontal: 14,
-    paddingVertical: 7,
-    borderRadius: 16,
-    backgroundColor: theme.surface,
-    borderWidth: 1,
-    borderColor: theme.border,
-  },
-  chipActive: { backgroundColor: theme.accent, borderColor: theme.accent },
-  chipText: { color: theme.textDim, fontSize: getPixels(13), fontWeight: '600' },
-  chipTextActive: { color: '#04101C' },
+
   loader: { paddingVertical: 24 },
-  empty: { color: theme.textDim, textAlign: 'center', padding: 32 },
-  center: { flex: 1, backgroundColor: theme.bg, justifyContent: 'center', padding: 28, gap: 10 },
-  errorTitle: { color: theme.text, fontSize: getPixels(20), fontWeight: '700' },
-  errorBody: { color: theme.danger, fontSize: getPixels(13) },
-  errorHint: { color: theme.textDim, fontSize: getPixels(13), lineHeight: getPixels(19) },
-  mono: { color: theme.accent, fontFamily: 'Courier' },
-  retry: {
-    marginTop: 8,
-    alignSelf: 'flex-start',
-    backgroundColor: theme.accent,
-    paddingHorizontal: 18,
-    paddingVertical: 10,
-    borderRadius: 8,
-  },
-  retryText: { color: '#04101C', fontWeight: '700' },
 });

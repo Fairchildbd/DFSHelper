@@ -1,56 +1,55 @@
-
 import type { GameShape } from './api';
-import { theme } from './theme';
+import type { Theme } from './theme';
 
-export function edgeColor(edge: number | null): string {
-  if (edge == null) return theme.textFaint;
-  if (edge >= 45) return '#34D399';
-  if (edge >= 20) return '#A3E635';
-  if (edge > -20) return '#94A3B8';
-  if (edge > -45) return '#FBBF24';
-  return '#F87171';
+export function edgeColor(t: Theme, edge: number | null): string {
+  if (edge == null) return t.textFaint;
+  if (edge >= 45) return t.great;
+  if (edge >= 20) return t.good;
+  if (edge > -20) return t.even;
+  if (edge > -45) return t.weak;
+  return t.bad;
 }
 
-export function mismatchColor(score: number): string {
-  if (score >= 70) return '#34D399';
-  if (score >= 58) return '#A3E635';
-  if (score >= 45) return '#94A3B8';
-  return theme.textDim;
+export function mismatchColor(t: Theme, score: number): string {
+  if (score >= 70) return t.great;
+  if (score >= 58) return t.good;
+  if (score >= 45) return t.even;
+  return t.textDim;
 }
 
-export function shootoutColor(score: number): string {
-  if (score >= 62) return '#34D399';
-  if (score >= 54) return '#A3E635';
-  if (score >= 44) return '#94A3B8';
-  return theme.textDim;
+export function shootoutColor(t: Theme, score: number): string {
+  if (score >= 62) return t.great;
+  if (score >= 54) return t.good;
+  if (score >= 44) return t.even;
+  return t.textDim;
 }
 
 export const GAME_SHAPES: Record<
   GameShape,
-  { title: string; blurb: string; color: string }
+  { title: string; blurb: string; tone: 'great' | 'good' | 'even' | 'weak' }
 > = {
   shootout: {
     title: 'Shootout',
     blurb: 'Real scoring, and both offenses can get to it. Games to stack.',
-    color: '#34D399',
+    tone: 'great',
   },
   one_sided: {
     title: 'Points, but one-sided',
     blurb:
       'The scoring is there and one team carries it. A side to attack, not a game to stack.',
-    color: '#A3E635',
+    tone: 'good',
   },
   low_scoring: {
     title: 'Low-scoring',
     blurb:
       'Not much projected, and no defense to credit for it — these offenses simply cannot move.',
-    color: '#94A3B8',
+    tone: 'even',
   },
   defensive: {
     title: 'Defensive games',
     blurb:
       'Quiet because the defenses are good. The mismatches here are real, but they favour the defense.',
-    color: '#FBBF24',
+    tone: 'weak',
   },
 };
 
@@ -78,16 +77,17 @@ export function formatTendency(value: number, unit: string): string {
 }
 
 export function tendencySourceLabel(
+  t: Theme,
   source: 'coach' | 'team' | 'league',
   coach: string | null,
 ): { label: string; color: string } {
   switch (source) {
     case 'coach':
-      return { label: `${coach ?? 'Coach'}’s own record`, color: theme.production };
+      return { label: `${coach ?? 'Coach'}’s own record`, color: t.positive };
     case 'team':
-      return { label: 'New staff — showing the team’s recent profile', color: theme.warn };
+      return { label: 'New staff — showing the team’s recent profile', color: t.warn };
     default:
-      return { label: 'League average — no profile available', color: theme.danger };
+      return { label: 'League average — no profile available', color: t.danger };
   }
 }
 
