@@ -39,6 +39,7 @@ import {
   StatRow,
   laneIcon,
 } from '../components/ui';
+import { t as translate, useTranslation, type MessageKey } from '../i18n';
 import {
   SKILL_POSITIONS,
   edgeColor,
@@ -50,31 +51,31 @@ import { getPixels, radius, scoreColor, useStyles, useTheme, type Theme } from '
 
 const STAFF_SIDE_BY_SIDE_WIDTH = 700;
 
-function heroTint(t: Theme, score: number) {
-  const color = scoreColor(t, score);
-  return color === t.accent
-    ? { color, textShadowColor: t.accentGlow, textShadowRadius: 22 }
+function heroTint(theme: Theme, score: number) {
+  const color = scoreColor(theme, score);
+  return color === theme.accent
+    ? { color, textShadowColor: theme.accentGlow, textShadowRadius: 22 }
     : { color, textShadowRadius: 0 };
 }
 
 type Section = 'staffs' | 'lanes' | 'players';
 
-const SECTIONS: Array<{ key: Section; label: string }> = [
-  { key: 'staffs', label: 'Staffs' },
-  { key: 'lanes', label: 'Lane edges' },
-  { key: 'players', label: 'Players' },
+const SECTION_KEYS: Array<{ key: Section; label: MessageKey }> = [
+  { key: 'staffs', label: 'matchup.section.staffs' },
+  { key: 'lanes', label: 'matchup.section.lanes' },
+  { key: 'players', label: 'matchup.section.players' },
 ];
 
-const UNIT_LABEL: Record<MatchupStarter['unit'], string> = {
-  offense: 'Off',
-  defense: 'DEF',
-  special: 'SPT',
+const UNIT_LABEL_KEYS: Record<MatchupStarter['unit'], MessageKey> = {
+  offense: 'matchup.unit.offense',
+  defense: 'matchup.unit.defense',
+  special: 'matchup.unit.special',
 };
 
-const UNIT_TITLE: Record<MatchupStarter['unit'], string> = {
-  offense: 'starting offense',
-  defense: 'starting defense',
-  special: 'starting special teams',
+const UNIT_TITLE_KEYS: Record<MatchupStarter['unit'], MessageKey> = {
+  offense: 'matchup.unitTitle.offense',
+  defense: 'matchup.unitTitle.defense',
+  special: 'matchup.unitTitle.special',
 };
 
 const HEADLINE_OFFENSE = ['proe', 'sec_per_play', 'play_action_rate', 'te_target_share'];
@@ -91,7 +92,8 @@ export function MatchupDetailScreen({
   onSelectPlayer: (player: MatchupPlayer) => void;
   onBuildShowdown?: (slate: SlateSummary, strategy: StrategyDefinition) => void;
 }) {
-  const t = useTheme();
+  const { t } = useTranslation();
+  const theme = useTheme();
   const styles = useStyles(sheet);
 
   const [detail, setDetail] = useState<MatchupDetail | null>(null);
@@ -157,10 +159,10 @@ export function MatchupDetailScreen({
     const { away_team: away, home_team: home } = detail;
     const chip = (team: string, unit: MatchupStarter['unit']) => ({
       key: `${team}|${unit}`,
-      label: `${team} ${UNIT_LABEL[unit]}`,
+      label: t('matchup.unitChip', { team, unit: t(UNIT_LABEL_KEYS[unit]) }),
     });
     return [
-      { key: 'skill', label: 'Skill Positions' },
+      { key: 'skill', label: t('matchup.skillPositions') },
       chip(away, 'offense'),
       chip(home, 'offense'),
       chip(away, 'defense'),
@@ -168,7 +170,12 @@ export function MatchupDetailScreen({
       chip(home, 'defense'),
       chip(home, 'special'),
     ];
-  }, [detail]);
+  }, [detail, t]);
+
+  const sections = useMemo(
+    () => SECTION_KEYS.map((entry) => ({ key: entry.key, label: t(entry.label) })),
+    [t],
+  );
 
   if (error) {
     return <ErrorState message={error} onRetry={onBack} />;
@@ -181,12 +188,16 @@ export function MatchupDetailScreen({
   const unitLabels = new Map(meta.lanes.map((l) => [l.key, l.label]));
 
   const [filterTeam, filterUnit] = filter.split('|');
+  const unitTitleKey = UNIT_TITLE_KEYS[filterUnit as MatchupStarter['unit']];
   const listTitle =
     filter === 'skill'
       ? isFinal
-        ? 'Graded players, against what they scored'
-        : 'Best matchups'
-      : `${filterTeam} ${UNIT_TITLE[filterUnit as MatchupStarter['unit']] ?? 'starters'}`;
+        ? t('matchup.gradedPlayers')
+        : t('matchup.bestMatchups')
+      : t('matchup.starterListTitle', {
+          team: filterTeam ?? '',
+          unit: t(unitTitleKey ?? 'matchup.unitTitle.fallback'),
+        });
 
   const edges = [...detail.detail.edges]
     .filter((e) => e.edge != null)
@@ -201,44 +212,57 @@ export function MatchupDetailScreen({
         </Text>
         <Text style={styles.kickoff}>
           {formatKickoff(detail.gameday, detail.gametime)}
-          {detail.stadium ? ` · ${detail.stadium}` : ''}
+          {detail.stadium ? t('matchup.stadium', { stadium: detail.stadium }) : ''}
         </Text>
         {isFinal && (
           <Text style={styles.finalScore}>
-            FINAL {detail.away_team} {detail.away_score} – {detail.home_score}{' '}
-            {detail.home_team}
+            {t('matchup.finalScore', {
+              away: detail.away_team,
+              awayScore: detail.away_score ?? '',
+              home: detail.home_team,
+              homeScore: detail.home_score ?? '',
+            })}
           </Text>
         )}
-        <Text style={[styles.heroScore, heroTint(t, score)]}>{score.toFixed(1)}</Text>
+        <Text style={[styles.heroScore, heroTint(theme, score)]}>{score.toFixed(1)}</Text>
         <Text style={styles.heroLabel}>
-          {isFinal ? 'predicted ' : ''}mismatch score · {detail.edge_count} lane
-          {detail.edge_count === 1 ? '' : 's'} past the {meta.edgeThreshold}-point bar
+          {isFinal ? t('matchup.predictedPrefix') : ''}
+          {t('matchup.heroLabel', {
+            count: detail.edge_count,
+            threshold: meta.edgeThreshold,
+          })}
         </Text>
       </View>
       <Notice>
-        Talent gap {Number(detail.mismatch_score).toFixed(1)} · scoring{' '}
-        {detail.shootout_score == null
-          ? 'not graded'
-          : Number(detail.shootout_score).toFixed(1)}
+        {t('matchup.talentGap', {
+          gap: Number(detail.mismatch_score).toFixed(1),
+          scoring:
+            detail.shootout_score == null
+              ? t('matchup.notGraded')
+              : Number(detail.shootout_score).toFixed(1),
+        })}
         {detail.lean_team
-          ? `, leaning ${detail.lean_team}`
+          ? t('matchup.leaning', { team: detail.lean_team })
           : detail.shootout_score == null
             ? ''
-            : ', evenly split'}
+            : t('matchup.evenlySplit')}
         {detail.total_line != null
-          ? ` (total ${Number(detail.total_line).toFixed(1)}${
-              detail.spread_line != null
-                ? `, spread ${Number(detail.spread_line) > 0 ? '+' : ''}${Number(
-                    detail.spread_line,
-                  ).toFixed(1)}`
-                : ''
-            })`
+          ? t('matchup.vegasLine', {
+              total: Number(detail.total_line).toFixed(1),
+              spread:
+                detail.spread_line == null
+                  ? ''
+                  : t('matchup.spread', {
+                      spread: `${Number(detail.spread_line) > 0 ? '+' : ''}${Number(
+                        detail.spread_line,
+                      ).toFixed(1)}`,
+                    }),
+            })
           : ''}
       </Notice>
       {detail.total_line == null && (
         <Notice icon="alert-circle-outline" tone="warn">
-          No betting line published yet. The talent gap is unaffected; the scoring read is
-          built from the units and pace alone.
+          {t('matchup.noBettingLine')}
         </Notice>
       )}
 
@@ -246,15 +270,11 @@ export function MatchupDetailScreen({
         <Card wash rail style={styles.resultCard}>
           <Text style={styles.resultHeadline}>
             {detail.top10_hits == null
-              ? 'No fantasy lines were recorded for this game.'
-              : `${detail.top10_hits} of the ten highest-graded players finished in the game’s real top ten.`}
+              ? t('matchup.noFantasyLines')
+              : t('matchup.top10Hits', { hits: detail.top10_hits })}
           </Text>
           {detail.backfilled && (
-            <Text style={styles.resultCaveat}>
-              Graded after the fact. This prediction was generated from a model whose inputs
-              already include this game, so treat it as a worked example rather than as a
-              forecast that was actually made in advance.
-            </Text>
+            <Text style={styles.resultCaveat}>{t('matchup.backfilledCaveat')}</Text>
           )}
         </Card>
       )}
@@ -265,18 +285,17 @@ export function MatchupDetailScreen({
           accessibilityRole="button"
           style={({ pressed }) => [styles.buildButton, pressed && styles.pressed]}
         >
-          <Icon name="trophy-outline" size={19} color={t.onAccent} />
+          <Icon name="trophy-outline" size={19} color={theme.onAccent} />
           <View style={styles.buildText}>
-            <Text style={styles.buildLabel}>Build showdown captain lineup</Text>
+            <Text style={styles.buildLabel}>{t('matchup.buildShowdown')}</Text>
             <Text style={styles.buildMeta}>
-              {showdown.slate.players} priced for this game · captain at 1.5x salary and 1.5x
-              points
+              {t('matchup.buildShowdownMeta', { players: showdown.slate.players })}
             </Text>
           </View>
         </Pressable>
       )}
 
-      <Segmented items={SECTIONS} value={section} onChange={setSection} />
+      <Segmented items={sections} value={section} onChange={setSection} />
       {section === 'staffs' && (
         <View style={[styles.staffRow, !sideBySideStaff && styles.staffColumn]}>
           <StaffCard profile={detail.detail.away} meta={meta} stacked={!sideBySideStaff} />
@@ -286,10 +305,7 @@ export function MatchupDetailScreen({
 
       {section === 'lanes' && (
         <View style={styles.stack}>
-          <Text style={styles.sectionHint}>
-            Each unit’s percentile against the same unit league-wide, minus how well the
-            opponent defends it. Positive favours the offense.
-          </Text>
+          <Text style={styles.sectionHint}>{t('matchup.laneEdgesHint')}</Text>
           {edges.map((e) => (
             <LaneEdgeRow
               key={`${e.lane}-${e.label}`}
@@ -325,17 +341,14 @@ export function MatchupDetailScreen({
           ) : starters.length === 0 ? (
             <Text style={styles.sectionHint}>
               {filterUnit === 'special'
-                ? 'Nobody on this unit carries a ranking yet.'
-                : 'No depth chart published for this team yet.'}
+                ? t('matchup.noRankedSpecialists')
+                : t('matchup.noDepthChart')}
             </Text>
           ) : (
             <>
               <Text style={styles.sectionHint}>
-                One player per slot on the published depth chart. Backups are not listed, and
-                the number is his overall ranking score.
-                {filterUnit === 'special'
-                  ? ' Kickers, punters and snappers are not ranked yet, so they are held back.'
-                  : ''}
+                {t('matchup.startersHint')}
+                {filterUnit === 'special' ? t('matchup.startersHintSpecial') : ''}
               </Text>
               <Card style={styles.starterCard}>
                 {starters.map((s, i) => (
@@ -357,7 +370,8 @@ export function MatchupDetailScreen({
 }
 
 function LaneEdgeRow({ edge, laneLabel }: { edge: LaneEdgeDetail; laneLabel: string }) {
-  const t = useTheme();
+  const { t } = useTranslation();
+  const theme = useTheme();
   const styles = useStyles(sheet);
   const value = edge.edge!;
 
@@ -369,12 +383,14 @@ function LaneEdgeRow({ edge, laneLabel }: { edge: LaneEdgeDetail; laneLabel: str
           {edge.label}
         </Text>
         <Text style={styles.laneSub} numberOfLines={2}>
-          {laneLabel} · unit{' '}
-          {edge.offenseStrength == null ? '—' : edge.offenseStrength.toFixed(0)} vs defense{' '}
-          {edge.defenseStrength == null ? '—' : edge.defenseStrength.toFixed(0)}
+          {t('matchup.edgeSub', {
+            lane: laneLabel,
+            offense: edge.offenseStrength == null ? '—' : edge.offenseStrength.toFixed(0),
+            defense: edge.defenseStrength == null ? '—' : edge.defenseStrength.toFixed(0),
+          })}
         </Text>
       </View>
-      <Text style={[styles.laneValue, { color: edgeColor(t, value) }]}>
+      <Text style={[styles.laneValue, { color: edgeColor(theme, value) }]}>
         {value > 0 ? '+' : ''}
         {value.toFixed(0)}
       </Text>
@@ -391,9 +407,10 @@ function StaffCard({
   meta: MatchupMeta;
   stacked: boolean;
 }) {
-  const t = useTheme();
+  const { t } = useTranslation();
+  const theme = useTheme();
   const styles = useStyles(sheet);
-  const offenseSource = tendencySourceLabel(t, profile.offense.source, profile.coach);
+  const offenseSource = tendencySourceLabel(theme, profile.offense.source, profile.coach);
 
   const byKey = (side: 'offense' | 'defense') =>
     new Map(profile[side].metrics.map((m) => [m.metric, m]));
@@ -416,7 +433,11 @@ function StaffCard({
           label={def.label}
           value={formatTendency(m.value, def.unit)}
           percent={placed ? ((m.rankOf! - m.rank! + 1) / m.rankOf!) * 100 : null}
-          note={placed ? `${ordinal(m.rank!)} of ${m.rankOf}` : 'Not ranked'}
+          note={
+            placed
+              ? t('matchup.rankOf', { rank: ordinal(m.rank!), total: m.rankOf })
+              : t('matchup.notRanked')
+          }
         />
       );
     });
@@ -428,22 +449,24 @@ function StaffCard({
         <View style={styles.staffHeadText}>
           <Text style={styles.staffTeam}>{profile.team}</Text>
           <Text style={styles.staffCoach} numberOfLines={1}>
-            {profile.coach ?? 'Unknown'}
+            {profile.coach ?? t('matchup.unknownCoach')}
           </Text>
           <Text style={[styles.staffSource, { color: offenseSource.color }]} numberOfLines={2}>
             {offenseSource.label}
-            {profile.offense.source === 'coach' ? ` · ${profile.offense.nGames}g` : ''}
+            {profile.offense.source === 'coach'
+              ? t('matchup.coachGames', { games: profile.offense.nGames })
+              : ''}
           </Text>
         </View>
         <View style={styles.teamMark}>
           <Text style={styles.teamMarkText}>{profile.team}</Text>
         </View>
       </View>
-      <Eyebrow>Offense</Eyebrow>
+      <Eyebrow>{t('matchup.offense')}</Eyebrow>
       {lines(HEADLINE_OFFENSE, offense)}
 
       <View style={styles.staffSpacer} />
-      <Eyebrow>Defense</Eyebrow>
+      <Eyebrow>{t('matchup.defense')}</Eyebrow>
       {lines(HEADLINE_DEFENSE, defense)}
     </Card>
   );
@@ -451,16 +474,16 @@ function StaffCard({
 
 function ordinal(n: number): string {
   const lastTwo = n % 100;
-  if (lastTwo >= 11 && lastTwo <= 13) return `${n}th`;
+  if (lastTwo >= 11 && lastTwo <= 13) return translate('ordinal.th', { n });
   switch (n % 10) {
     case 1:
-      return `${n}st`;
+      return translate('ordinal.st', { n });
     case 2:
-      return `${n}nd`;
+      return translate('ordinal.nd', { n });
     case 3:
-      return `${n}rd`;
+      return translate('ordinal.rd', { n });
     default:
-      return `${n}th`;
+      return translate('ordinal.th', { n });
   }
 }
 
@@ -473,7 +496,8 @@ function PlayerMatchupRow({
   rank: number;
   onPress: (player: MatchupPlayer) => void;
 }) {
-  const t = useTheme();
+  const { t } = useTranslation();
+  const theme = useTheme();
   const styles = useStyles(sheet);
   const score = Number(player.matchup_score);
   const edge = player.lane_edge == null ? null : Number(player.lane_edge);
@@ -493,35 +517,43 @@ function PlayerMatchupRow({
           {player.display_name}
         </Text>
         <Text style={styles.playerMeta} numberOfLines={1}>
-          {player.team} · {player.position}
-          {player.pos_rank != null ? `${player.pos_rank}` : ''} ·{' '}
-          {player.detail?.laneLabel ?? ''}
+          {t('matchup.playerMeta', {
+            team: player.team,
+            position: `${player.position}${player.pos_rank ?? ''}`,
+            lane: player.detail?.laneLabel ?? '',
+          })}
         </Text>
         <Text style={styles.playerEdge} numberOfLines={1}>
           {edge == null
-            ? 'Matchup not gradeable'
-            : `${edge > 0 ? '+' : ''}${edge.toFixed(0)} unit edge · ${
-                player.composite == null
-                  ? 'unranked'
-                  : `${Number(player.composite).toFixed(0)} ranking`
-              } · ${Number(player.volume_score).toFixed(0)} volume`}
+            ? t('matchup.notGradeable')
+            : t('matchup.playerEdge', {
+                edge: `${edge > 0 ? '+' : ''}${edge.toFixed(0)}`,
+                ranking:
+                  player.composite == null
+                    ? t('matchup.unranked')
+                    : t('matchup.rankingScore', {
+                        score: Number(player.composite).toFixed(0),
+                      }),
+                volume: Number(player.volume_score).toFixed(0),
+              })}
         </Text>
         {player.actual_points != null && (
           <Text style={styles.playerActual} numberOfLines={1}>
-            {`Scored ${Number(player.actual_points).toFixed(1)} PPR`}
+            {t('matchup.scoredPpr', { points: Number(player.actual_points).toFixed(1) })}
             {player.predicted_rank != null && player.actual_rank != null
-              ? ` · ranked #${player.predicted_rank}, finished #${player.actual_rank}`
+              ? t('matchup.rankedFinished', {
+                  predicted: player.predicted_rank,
+                  actual: player.actual_rank,
+                })
               : ''}
             {statLine(player.actual_line)}
           </Text>
         )}
         {player.detail?.tendencySource === 'team' && (
-          <Text style={styles.playerCaveat}>
-            Scheme profile is the team’s, not this staff’s
-          </Text>
+          <Text style={styles.playerCaveat}>{t('matchup.schemeCaveat')}</Text>
         )}
       </View>
-      <Text style={[styles.playerScore, { color: scoreColor(t, score) }]}>
+      <Text style={[styles.playerScore, { color: scoreColor(theme, score) }]}>
         {score.toFixed(0)}
       </Text>
     </Pressable>
@@ -531,16 +563,30 @@ function PlayerMatchupRow({
 function statLine(line: MatchupPlayer['actual_line']): string {
   if (!line) return '';
   const parts: string[] = [];
-  if (line.passingYards) parts.push(`${line.passingYards.toFixed(0)} pass yd`);
-  if (line.rushingYards) parts.push(`${line.rushingYards.toFixed(0)} rush yd`);
-  if (line.receptions) parts.push(`${line.receptions}/${line.targets ?? '?'} rec`);
-  if (line.receivingYards) parts.push(`${line.receivingYards.toFixed(0)} rec yd`);
-  if (line.tds) parts.push(`${line.tds} TD`);
-  return parts.length > 0 ? ` · ${parts.join(', ')}` : '';
+  if (line.passingYards) {
+    parts.push(translate('stat.passYards', { yards: line.passingYards.toFixed(0) }));
+  }
+  if (line.rushingYards) {
+    parts.push(translate('stat.rushYards', { yards: line.rushingYards.toFixed(0) }));
+  }
+  if (line.receptions) {
+    parts.push(
+      translate('stat.receptions', {
+        receptions: line.receptions,
+        targets: line.targets ?? '?',
+      }),
+    );
+  }
+  if (line.receivingYards) {
+    parts.push(translate('stat.receivingYards', { yards: line.receivingYards.toFixed(0) }));
+  }
+  if (line.tds) parts.push(translate('stat.touchdowns', { tds: line.tds }));
+  return parts.length > 0 ? translate('stat.line', { line: parts.join(', ') }) : '';
 }
 
 function StarterRow({ starter, first }: { starter: MatchupStarter; first: boolean }) {
-  const t = useTheme();
+  const { t } = useTranslation();
+  const theme = useTheme();
   const styles = useStyles(sheet);
 
   return (
@@ -553,34 +599,36 @@ function StarterRow({ starter, first }: { starter: MatchupStarter; first: boolea
         <Text style={styles.starterMeta} numberOfLines={1}>
           {starter.role_name ?? starter.position ?? ''}
           {starter.position_rank != null && starter.position != null
-            ? ` · ${starter.position}${starter.position_rank}`
+            ? t('matchup.starterRank', {
+                rank: `${starter.position}${starter.position_rank}`,
+              })
             : ''}
         </Text>
       </View>
-      <Text style={[styles.starterScore, { color: scoreColor(t, starter.composite) }]}>
+      <Text style={[styles.starterScore, { color: scoreColor(theme, starter.composite) }]}>
         {starter.composite == null ? '—' : starter.composite.toFixed(0)}
       </Text>
     </View>
   );
 }
 
-const sheet = (t: Theme) => ({
-  screen: { flex: 1, backgroundColor: t.bg },
+const sheet = (theme: Theme) => ({
+  screen: { flex: 1, backgroundColor: theme.bg },
   content: { paddingHorizontal: 16, paddingBottom: 8, gap: 12 },
   stack: { gap: 10 },
   pressed: { opacity: 0.75 },
 
   hero: { alignItems: 'center' as const, paddingTop: 4, paddingBottom: 4 },
   teams: {
-    color: t.text,
+    color: theme.text,
     fontSize: getPixels(30),
     fontWeight: '800' as const,
     letterSpacing: -0.5,
   },
-  at: { color: t.textFaint, fontWeight: '500' as const },
-  kickoff: { color: t.textDim, fontSize: getPixels(12.5), marginTop: 4 },
+  at: { color: theme.textFaint, fontWeight: '500' as const },
+  kickoff: { color: theme.textDim, fontSize: getPixels(12.5), marginTop: 4 },
   finalScore: {
-    color: t.text,
+    color: theme.text,
     fontSize: getPixels(15),
     fontWeight: '800' as const,
     marginTop: 6,
@@ -596,7 +644,7 @@ const sheet = (t: Theme) => ({
     textShadowOffset: { width: 0, height: 0 },
   },
   heroLabel: {
-    color: t.textDim,
+    color: theme.textDim,
     fontSize: getPixels(11.5),
     textAlign: 'center' as const,
     marginTop: 2,
@@ -604,26 +652,26 @@ const sheet = (t: Theme) => ({
 
   resultCard: { padding: 14, gap: 6 },
   resultHeadline: {
-    color: t.text,
+    color: theme.text,
     fontSize: getPixels(13.5),
     fontWeight: '700' as const,
     lineHeight: getPixels(19.5),
   },
-  resultCaveat: { color: t.warn, fontSize: getPixels(11), lineHeight: getPixels(16) },
+  resultCaveat: { color: theme.warn, fontSize: getPixels(11), lineHeight: getPixels(16) },
 
   buildButton: {
     flexDirection: 'row' as const,
     alignItems: 'center' as const,
     gap: 11,
-    backgroundColor: t.accent,
+    backgroundColor: theme.accent,
     borderRadius: radius.card,
     paddingVertical: 13,
     paddingHorizontal: 14,
   },
   buildText: { flex: 1 },
-  buildLabel: { color: t.onAccent, fontSize: getPixels(14.5), fontWeight: '800' as const },
+  buildLabel: { color: theme.onAccent, fontSize: getPixels(14.5), fontWeight: '800' as const },
   buildMeta: {
-    color: t.onAccent,
+    color: theme.onAccent,
     opacity: 0.85,
     fontSize: getPixels(11),
     fontWeight: '600' as const,
@@ -631,9 +679,9 @@ const sheet = (t: Theme) => ({
     lineHeight: getPixels(15),
   },
 
-  sectionHint: { color: t.textDim, fontSize: getPixels(12), lineHeight: getPixels(17.5) },
+  sectionHint: { color: theme.textDim, fontSize: getPixels(12), lineHeight: getPixels(17.5) },
   listTitle: {
-    color: t.text,
+    color: theme.text,
     fontSize: getPixels(19),
     fontWeight: '800' as const,
     letterSpacing: -0.4,
@@ -647,12 +695,12 @@ const sheet = (t: Theme) => ({
   staffHead: { flexDirection: 'row' as const, alignItems: 'flex-start' as const, gap: 10 },
   staffHeadText: { flex: 1 },
   staffTeam: {
-    color: t.text,
+    color: theme.text,
     fontSize: getPixels(22),
     fontWeight: '800' as const,
     letterSpacing: -0.4,
   },
-  staffCoach: { color: t.textDim, fontSize: getPixels(13), fontWeight: '600' as const },
+  staffCoach: { color: theme.textDim, fontSize: getPixels(13), fontWeight: '600' as const },
   staffSource: {
     fontSize: getPixels(11),
     fontWeight: '600' as const,
@@ -664,13 +712,13 @@ const sheet = (t: Theme) => ({
     width: 46,
     height: 46,
     borderRadius: 23,
-    backgroundColor: t.surfaceAlt,
+    backgroundColor: theme.surfaceAlt,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: t.border,
+    borderColor: theme.border,
     alignItems: 'center' as const,
     justifyContent: 'center' as const,
   },
-  teamMarkText: { color: t.textDim, fontSize: getPixels(12), fontWeight: '800' as const },
+  teamMarkText: { color: theme.textDim, fontSize: getPixels(12), fontWeight: '800' as const },
 
   laneRow: {
     flexDirection: 'row' as const,
@@ -679,8 +727,8 @@ const sheet = (t: Theme) => ({
     padding: 12,
   },
   laneMain: { flex: 1 },
-  laneLabel: { color: t.text, fontSize: getPixels(14.5), fontWeight: '700' as const },
-  laneSub: { color: t.textDim, fontSize: getPixels(11), marginTop: 2, lineHeight: getPixels(15) },
+  laneLabel: { color: theme.text, fontSize: getPixels(14.5), fontWeight: '700' as const },
+  laneSub: { color: theme.textDim, fontSize: getPixels(11), marginTop: 2, lineHeight: getPixels(15) },
   laneValue: {
     fontSize: getPixels(21),
     fontWeight: '800' as const,
@@ -695,34 +743,34 @@ const sheet = (t: Theme) => ({
     gap: 10,
     padding: 12,
     paddingLeft: 10,
-    backgroundColor: t.surface,
+    backgroundColor: theme.surface,
     borderRadius: radius.card,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: t.border,
+    borderColor: theme.border,
     borderLeftWidth: 2,
-    borderLeftColor: t.accent,
+    borderLeftColor: theme.accent,
     overflow: 'hidden' as const,
   },
   rankBadge: {
     width: 24,
     height: 24,
     borderRadius: 7,
-    backgroundColor: t.accentSoft,
+    backgroundColor: theme.accentSoft,
     alignItems: 'center' as const,
     justifyContent: 'center' as const,
   },
-  rankText: { color: t.accent, fontSize: getPixels(12), fontWeight: '700' as const },
+  rankText: { color: theme.accent, fontSize: getPixels(12), fontWeight: '700' as const },
   playerMain: { flex: 1, gap: 2 },
   playerName: {
-    color: t.text,
+    color: theme.text,
     fontSize: getPixels(16),
     fontWeight: '700' as const,
     letterSpacing: -0.2,
   },
-  playerMeta: { color: t.textDim, fontSize: getPixels(11.5) },
-  playerEdge: { color: t.accent, fontSize: getPixels(11.5), fontWeight: '600' as const },
-  playerCaveat: { color: t.warn, fontSize: getPixels(10) },
-  playerActual: { color: t.positive, fontSize: getPixels(10.5), fontWeight: '600' as const },
+  playerMeta: { color: theme.textDim, fontSize: getPixels(11.5) },
+  playerEdge: { color: theme.accent, fontSize: getPixels(11.5), fontWeight: '600' as const },
+  playerCaveat: { color: theme.warn, fontSize: getPixels(10) },
+  playerActual: { color: theme.positive, fontSize: getPixels(10.5), fontWeight: '600' as const },
   playerScore: {
     fontSize: getPixels(26),
     fontWeight: '800' as const,
@@ -738,19 +786,19 @@ const sheet = (t: Theme) => ({
     gap: 10,
     paddingVertical: 9,
     borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: t.border,
+    borderTopColor: theme.border,
   },
   starterRowFirst: { borderTopWidth: 0 },
   starterRole: {
-    color: t.textFaint,
+    color: theme.textFaint,
     fontSize: getPixels(10.5),
     fontWeight: '800' as const,
     letterSpacing: 0.4,
     width: 44,
   },
   starterMain: { flex: 1 },
-  starterName: { color: t.text, fontSize: getPixels(14), fontWeight: '600' as const },
-  starterMeta: { color: t.textFaint, fontSize: getPixels(10.5), marginTop: 1 },
+  starterName: { color: theme.text, fontSize: getPixels(14), fontWeight: '600' as const },
+  starterMeta: { color: theme.textFaint, fontSize: getPixels(10.5), marginTop: 1 },
   starterScore: {
     fontSize: getPixels(17),
     fontWeight: '800' as const,

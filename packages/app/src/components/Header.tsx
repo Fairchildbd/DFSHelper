@@ -1,4 +1,5 @@
 import { Pressable, StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native';
+import { useTranslation } from '../i18n';
 import { getPixels, useStyles, useTheme, type Theme } from '../theme';
 import { Icon, glowStyle, type IconName } from './Icon';
 
@@ -24,7 +25,7 @@ export function RoundButton({
   tone?: 'accent' | 'neutral';
   label?: string;
 }) {
-  const t = useTheme();
+  const theme = useTheme();
   const styles = useStyles(sheet);
   const accent = tone === 'accent';
 
@@ -33,10 +34,10 @@ export function RoundButton({
       style={[
         styles.round,
         accent ? styles.roundAccent : styles.roundNeutral,
-        accent && glowStyle(t, 0.6),
+        accent && glowStyle(theme, 0.6),
       ]}
     >
-      <Icon name={name} size={19} color={accent ? t.accent : t.text} />
+      <Icon name={name} size={19} color={accent ? theme.accent : theme.text} />
     </View>
   );
 
@@ -68,7 +69,8 @@ export function AppBar({
   title?: string;
   right?: React.ReactNode;
 }) {
-  const t = useTheme();
+  const { t } = useTranslation();
+  const theme = useTheme();
   const styles = useStyles(sheet);
   const centred = Boolean(onBack) && !backLabel;
 
@@ -84,12 +86,17 @@ export function AppBar({
               style={({ pressed }) => pressed && styles.pressed}
             >
               <View style={styles.backLink}>
-                <Icon name="chevron-left" size={18} color={t.accent} />
+                <Icon name="chevron-left" size={18} color={theme.accent} />
                 <Text style={styles.backLinkText}>{backLabel}</Text>
               </View>
             </Pressable>
           ) : (
-            <RoundButton name="chevron-left" tone="neutral" onPress={onBack} label="Back" />
+            <RoundButton
+              name="chevron-left"
+              tone="neutral"
+              onPress={onBack}
+              label={t('app.back.label')}
+            />
           )}
         </View>
       )}
@@ -158,14 +165,14 @@ export function Eyebrow({ children, color }: { children: React.ReactNode; color?
   return <Text style={[styles.eyebrow, color != null && { color }]}>{children}</Text>;
 }
 
-const sheet = (t: Theme) => ({
+const sheet = (theme: Theme) => ({
   wordmark: {
-    color: t.text,
+    color: theme.text,
     fontSize: getPixels(19),
     fontWeight: '800' as const,
     letterSpacing: -0.3,
   },
-  wordmarkAccent: { color: t.accent, fontStyle: 'italic' as const },
+  wordmarkAccent: { color: theme.accent, fontStyle: 'italic' as const },
 
   round: {
     width: 38,
@@ -175,12 +182,12 @@ const sheet = (t: Theme) => ({
     justifyContent: 'center' as const,
     borderWidth: StyleSheet.hairlineWidth,
   },
-  roundAccent: { backgroundColor: t.accentSoft, borderColor: t.accent },
-  roundNeutral: { backgroundColor: t.surfaceAlt, borderColor: t.border },
+  roundAccent: { backgroundColor: theme.accentSoft, borderColor: theme.accent },
+  roundNeutral: { backgroundColor: theme.surfaceAlt, borderColor: theme.border },
   pressed: { opacity: 0.6 },
 
   backLink: { flexDirection: 'row' as const, alignItems: 'center' as const, gap: 1 },
-  backLinkText: { color: t.accent, fontSize: getPixels(15), fontWeight: '600' as const },
+  backLinkText: { color: theme.accent, fontSize: getPixels(15), fontWeight: '600' as const },
 
   bar: {
     flexDirection: 'row' as const,
@@ -196,7 +203,7 @@ const sheet = (t: Theme) => ({
   barCentred: { alignItems: 'center' as const },
   barLeading: { alignItems: 'flex-start' as const },
   barTitle: {
-    color: t.text,
+    color: theme.text,
     fontSize: getPixels(17),
     fontWeight: '700' as const,
     letterSpacing: -0.2,
@@ -210,30 +217,30 @@ const sheet = (t: Theme) => ({
     gap: 12,
   },
   title: {
-    color: t.text,
+    color: theme.text,
     fontSize: getPixels(32),
     fontWeight: '800' as const,
     letterSpacing: -0.9,
     flexShrink: 1,
   },
-  subtitle: { color: t.textDim, fontSize: getPixels(13), marginTop: 3 },
+  subtitle: { color: theme.textDim, fontSize: getPixels(13), marginTop: 3 },
 
   sectionBlock: { paddingTop: 20, paddingBottom: 8, gap: 3 },
   sectionTitle: {
-    color: t.text,
+    color: theme.text,
     fontSize: getPixels(19),
     fontWeight: '800' as const,
     letterSpacing: -0.4,
     flexShrink: 1,
   },
   sectionHint: {
-    color: t.textDim,
+    color: theme.textDim,
     fontSize: getPixels(12),
     lineHeight: getPixels(17.5),
   },
 
   eyebrow: {
-    color: t.accent,
+    color: theme.accent,
     fontSize: getPixels(10.5),
     fontWeight: '800' as const,
     letterSpacing: 0.9,

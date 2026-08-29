@@ -1,4 +1,4 @@
-import { Suspense, lazy, useCallback, useState } from 'react';
+import { Suspense, lazy, useCallback, useMemo, useState } from 'react';
 import { ActivityIndicator, StatusBar, View } from 'react-native';
 import {
   SafeAreaProvider,
@@ -12,7 +12,14 @@ import type {
   SlateSummary,
   StrategyDefinition,
 } from './src/api';
-import { BottomInsetProvider, TabBar, tabBarSpace, type TabItem } from './src/components/ui';
+import {
+  BottomInsetProvider,
+  TabBar,
+  tabBarSpace,
+  type IconName,
+  type TabItem,
+} from './src/components/ui';
+import { useTranslation, type MessageKey } from './src/i18n';
 import type { PlayerRef } from './src/screens/PlayerDetailScreen';
 import { ThisWeekScreen } from './src/screens/ThisWeekScreen';
 import { useStyles, useTheme, type Theme } from './src/theme';
@@ -38,11 +45,11 @@ const RankingsScreen = lazy(() =>
 
 type Tab = 'week' | 'bestball' | 'rankings' | 'about';
 
-const TABS: ReadonlyArray<TabItem<Tab>> = [
-  { key: 'week', label: 'This Week', icon: 'finance' },
-  { key: 'bestball', label: 'Best Ball', icon: 'star-outline' },
-  { key: 'rankings', label: 'Rankings', icon: 'crown-outline' },
-  { key: 'about', label: 'About', icon: 'information-outline' },
+const TABS: ReadonlyArray<{ key: Tab; label: MessageKey; icon: IconName }> = [
+  { key: 'week', label: 'app.tab.week', icon: 'finance' },
+  { key: 'bestball', label: 'app.tab.bestball', icon: 'star-outline' },
+  { key: 'rankings', label: 'app.tab.rankings', icon: 'crown-outline' },
+  { key: 'about', label: 'app.tab.about', icon: 'information-outline' },
 ];
 
 export default function App() {
@@ -54,9 +61,15 @@ export default function App() {
 }
 
 function Shell() {
-  const t = useTheme();
+  const { t } = useTranslation();
+  const theme = useTheme();
   const styles = useStyles(sheet);
   const insets = useSafeAreaInsets();
+
+  const tabs = useMemo<ReadonlyArray<TabItem<Tab>>>(
+    () => TABS.map((item) => ({ key: item.key, label: t(item.label), icon: item.icon })),
+    [t],
+  );
 
   const [tab, setTab] = useState<Tab>('week');
   const [game, setGame] = useState<MatchupSummary | null>(null);
@@ -95,7 +108,7 @@ function Shell() {
       <LineupScreen
         slate={build.slate}
         strategy={build.strategy}
-        backLabel={game ? 'Matchup' : 'This Week'}
+        backLabel={game ? t('app.back.matchup') : t('app.back.week')}
         label={game ? `${game.away_team} @ ${game.home_team}` : undefined}
         onBack={closeBuild}
       />
@@ -104,7 +117,7 @@ function Shell() {
     body = (
       <PlayerDetailScreen
         player={player}
-        backLabel={game ? 'Matchup' : 'Rankings'}
+        backLabel={game ? t('app.back.matchup') : t('app.back.rankings')}
         onBack={closePlayer}
       />
     );
@@ -133,21 +146,21 @@ function Shell() {
 
   return (
     <View style={styles.root}>
-      <StatusBar barStyle={t.mode === 'light' ? 'dark-content' : 'light-content'} />
+      <StatusBar barStyle={theme.mode === 'light' ? 'dark-content' : 'light-content'} />
       <SafeAreaView style={styles.body} edges={['top', 'left', 'right']}>
         <BottomInsetProvider value={bottomInset}>
-          <Suspense fallback={<ActivityIndicator style={styles.loader} color={t.accent} />}>
+          <Suspense fallback={<ActivityIndicator style={styles.loader} color={theme.accent} />}>
             {body}
           </Suspense>
         </BottomInsetProvider>
       </SafeAreaView>
-      {showTabs && <TabBar items={TABS} value={tab} onChange={setTab} />}
+      {showTabs && <TabBar items={tabs} value={tab} onChange={setTab} />}
     </View>
   );
 }
 
-const sheet = (t: Theme) => ({
-  root: { flex: 1, backgroundColor: t.bg },
+const sheet = (theme: Theme) => ({
+  root: { flex: 1, backgroundColor: theme.bg },
   body: { flex: 1 },
   loader: { flex: 1, alignSelf: 'center' as const, marginTop: 40 },
 });

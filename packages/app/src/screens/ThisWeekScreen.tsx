@@ -25,7 +25,8 @@ import {
   RoundButton,
   SectionTitle,
 } from '../components/ui';
-import { GAME_SHAPES } from '../matchupFormat';
+import { Trans, useTranslation } from '../i18n';
+import { gameShapeCopy } from '../matchupFormat';
 import { getPixels, radius, useStyles, useTheme, type Theme } from '../theme';
 
 type Filter = GameShape | 'all' | 'ungraded';
@@ -37,7 +38,8 @@ export function ThisWeekScreen({
   onSelectGame: (game: MatchupSummary) => void;
   onBuildLineup: (slate: SlateSummary, strategy: StrategyDefinition) => void;
 }) {
-  const t = useTheme();
+  const { t } = useTranslation();
+  const theme = useTheme();
   const styles = useStyles(sheet);
 
   const [current, setCurrent] = useState<WeekBlock | null>(null);
@@ -79,25 +81,28 @@ export function ThisWeekScreen({
   const sections = useMemo(() => {
     const games = current?.games ?? [];
     const known = shapeOrder
-      .map((shape) => ({
-        key: shape as Filter,
-        title: GAME_SHAPES[shape].title,
-        blurb: GAME_SHAPES[shape].blurb,
-        games: games.filter((g) => g.game_shape === shape),
-      }))
+      .map((shape) => {
+        const copy = gameShapeCopy(shape);
+        return {
+          key: shape as Filter,
+          title: copy.title,
+          blurb: copy.blurb,
+          games: games.filter((g) => g.game_shape === shape),
+        };
+      })
       .filter((s) => s.games.length > 0);
 
     const ungraded = games.filter((g) => !g.game_shape || !shapeOrder.includes(g.game_shape));
     if (ungraded.length > 0) {
       known.push({
         key: 'ungraded',
-        title: 'Not graded',
-        blurb: 'Not enough roster or opponent data to say what kind of game this is.',
+        title: t('week.ungradedTitle'),
+        blurb: t('week.ungradedBlurb'),
         games: ungraded,
       });
     }
     return known;
-  }, [current, shapeOrder]);
+  }, [current, shapeOrder, t]);
 
   const matched = sections.filter((s) => s.key === filter);
   const shown = filter === 'all' || matched.length === 0 ? sections : matched;
@@ -107,9 +112,11 @@ export function ThisWeekScreen({
       <ErrorState
         message={error}
         hint={
-          <>
-            Expecting the server at {API_URL}. Start it with <Mono>npm run api</Mono>.
-          </>
+          <Trans
+            i18nKey="error.expectingServer"
+            values={{ url: API_URL }}
+            components={{ command: <Mono /> }}
+          />
         }
         onRetry={() => {
           setLoading(true);
@@ -127,7 +134,7 @@ export function ThisWeekScreen({
       refreshControl={
         <RefreshControl
           refreshing={refreshing}
-          tintColor={t.textDim}
+          tintColor={theme.textDim}
           onRefresh={() => {
             setRefreshing(true);
             load();
@@ -137,24 +144,20 @@ export function ThisWeekScreen({
     >
       <AppBar right={<RoundButton name="fire" />} />
       <PageTitle
-        title={current?.label ?? 'This week'}
+        title={current?.label ?? t('week.title')}
         subtitle={
           current
-            ? `${current.games.length} games · grouped by what kind of game it is`
-            : 'No upcoming week'
+            ? t('week.subtitle', { games: current.games.length })
+            : t('week.noUpcoming')
         }
       />
       {current?.upcoming && (
-        <Notice style={styles.noticeBlock}>
-          Nothing has kicked off yet, so every number here is a forecast built from prior
-          seasons. Predictions are frozen once a game goes final, so what you see now is
-          what gets graded next week.
-        </Notice>
+        <Notice style={styles.noticeBlock}>{t('week.forecastNotice')}</Notice>
       )}
 
       {current?.missing && (
         <Notice icon="alert-circle-outline" tone="warn" style={styles.noticeBlock}>
-          No predictions built for this week yet. Run <Mono>npm run db:matchups</Mono>.
+          <Trans i18nKey="week.noPredictions" components={{ command: <Mono /> }} />
         </Notice>
       )}
 
@@ -162,7 +165,7 @@ export function ThisWeekScreen({
         <View style={styles.gutter}>
           <ChipRow>
             <Chip
-              label="All"
+              label={t('week.allGames')}
               count={current?.games.length ?? null}
               active={filter === 'all'}
               onPress={() => setFilter('all')}
@@ -185,8 +188,10 @@ export function ThisWeekScreen({
         <View key={section.key}>
           <View style={styles.sectionHead}>
             <Text style={styles.sectionEyebrow}>
-              {section.title.toUpperCase()} · {section.games.length}{' '}
-              {section.games.length === 1 ? 'GAME' : 'GAMES'}
+              {t('week.sectionEyebrow', {
+                title: section.title,
+                count: section.games.length,
+              })}
             </Text>
             <Text style={styles.sectionBlurb}>{section.blurb}</Text>
           </View>
@@ -200,15 +205,13 @@ export function ThisWeekScreen({
         <>
           <View style={styles.gutter}>
             <SectionTitle
-              title={`${previous.label} · results`}
-              hint="What was ranked, against what actually happened"
+              title={t('week.resultsTitle', { label: previous.label })}
+              hint={t('week.resultsSubtitle')}
             />
           </View>
           {previous.games.some((g) => g.backfilled) && (
             <Notice icon="alert-circle-outline" tone="warn" style={styles.noticeBlock}>
-              These grades were produced after the game was played, as a worked example —
-              not a forecast the model made in advance. Weeks predicted ahead of kickoff
-              will be marked as such.
+              {t('week.backfilledNotice')}
             </Notice>
           )}
 
@@ -232,16 +235,17 @@ function LineupBar({
   strategies: StrategyDefinition[];
   onBuild: (slate: SlateSummary, strategy: StrategyDefinition) => void;
 }) {
+  const { t } = useTranslation();
   const styles = useStyles(sheet);
   const multiGame = slates.filter((s) => s.contest !== 'showdown');
 
   if (multiGame.length === 0) {
     return (
       <Notice icon="tray-arrow-down" tone="warn" style={styles.noticeBlock}>
-        {slates.length > 0
-          ? 'No main-slate salaries imported for this week. A showdown is loaded, and it builds from its own game below. For the main slate, export it from the contest lobby and run '
-          : 'No DraftKings salaries imported for this week, so no lineup can be built. Export the slate from the contest lobby and run '}
-        <Mono>npm run ingest:dk -- --file DKSalaries.csv</Mono>.
+        <Trans
+          i18nKey={slates.length > 0 ? 'week.noMainSlate' : 'week.noSalaries'}
+          components={{ command: <Mono /> }}
+        />
       </Notice>
     );
   }
@@ -251,8 +255,7 @@ function LineupBar({
       {multiGame.map((slate) => (
         <Card key={`${slate.contest}-${slate.game_id ?? 'all'}`} wash rail style={styles.lineupCard}>
           <Text style={styles.slateLabel}>
-            MAIN SLATE · {slate.games} {slate.games === 1 ? 'GAME' : 'GAMES'} · {slate.players}{' '}
-            PRICED
+            {t('week.slateLabel', { count: slate.games, players: slate.players })}
           </Text>
           {strategies.map((strategy) => (
             <Pressable
@@ -271,21 +274,22 @@ function LineupBar({
   );
 }
 
-const sheet = (t: Theme) => ({
-  screen: { flex: 1, backgroundColor: t.bg },
+const sheet = (theme: Theme) => ({
+  screen: { flex: 1, backgroundColor: theme.bg },
   gutter: { marginHorizontal: 16 },
 
   noticeBlock: { marginHorizontal: 16, marginBottom: 12 },
 
   sectionHead: { paddingHorizontal: 16, paddingTop: 18, paddingBottom: 9, gap: 2 },
   sectionEyebrow: {
-    color: t.textFaint,
+    color: theme.textFaint,
     fontSize: getPixels(11),
     fontWeight: '800' as const,
     letterSpacing: 1,
+    textTransform: 'uppercase' as const,
   },
   sectionBlurb: {
-    color: t.textFaint,
+    color: theme.textFaint,
     fontSize: getPixels(11.5),
     lineHeight: getPixels(16),
   },
@@ -293,21 +297,22 @@ const sheet = (t: Theme) => ({
   lineupBlock: { marginTop: 4, marginBottom: 4, gap: 10 },
   lineupCard: { padding: 14, gap: 10 },
   slateLabel: {
-    color: t.textFaint,
+    color: theme.textFaint,
     fontSize: getPixels(10.5),
     fontWeight: '800' as const,
     letterSpacing: 0.8,
+    textTransform: 'uppercase' as const,
   },
   buildButton: {
-    backgroundColor: t.accent,
+    backgroundColor: theme.accent,
     borderRadius: radius.puck,
     paddingVertical: 13,
     paddingHorizontal: 14,
   },
   pressed: { opacity: 0.8 },
-  buildLabel: { color: t.onAccent, fontSize: getPixels(15), fontWeight: '800' as const },
+  buildLabel: { color: theme.onAccent, fontSize: getPixels(15), fontWeight: '800' as const },
   buildMeta: {
-    color: t.onAccent,
+    color: theme.onAccent,
     opacity: 0.85,
     fontSize: getPixels(11.5),
     fontWeight: '600' as const,

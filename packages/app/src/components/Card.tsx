@@ -26,10 +26,10 @@ export function Card({
 }
 
 export function CardWash({ style }: { style?: StyleProp<ViewStyle> }) {
-  const t = useTheme();
+  const theme = useTheme();
   return (
     <LinearGradient
-      colors={t.cardWash}
+      colors={theme.cardWash}
       start={{ x: 0, y: 0 }}
       end={{ x: 1, y: 0.35 }}
       style={[StyleSheet.absoluteFill, style]}
@@ -38,20 +38,20 @@ export function CardWash({ style }: { style?: StyleProp<ViewStyle> }) {
   );
 }
 
-const sheet = (t: Theme) => ({
+const sheet = (theme: Theme) => ({
   card: {
-    backgroundColor: t.surface,
+    backgroundColor: theme.surface,
     borderRadius: radius.card,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: t.border,
+    borderColor: theme.border,
     overflow: 'hidden' as const,
   },
   rail: {
     borderLeftWidth: 2,
-    borderLeftColor: t.accent,
+    borderLeftColor: theme.accent,
   },
   outlined: {
     borderWidth: 1,
-    borderColor: t.accent,
+    borderColor: theme.accent,
   },
 });

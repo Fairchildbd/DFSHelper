@@ -21,6 +21,7 @@ import {
   RoundButton,
   useBottomInset,
 } from '../components/ui';
+import { Trans, useTranslation } from '../i18n';
 import { getPixels, useStyles, useTheme, type Theme } from '../theme';
 
 const ROWS_ON_FIRST_PAINT = Math.ceil(Dimensions.get('window').height / MATCHUP_ROW_HEIGHT) + 1;
@@ -32,7 +33,8 @@ export function BestBallScreen({
 }: {
   onSelectGame: (game: MatchupSummary) => void;
 }) {
-  const t = useTheme();
+  const { t } = useTranslation();
+  const theme = useTheme();
   const styles = useStyles(sheet);
 
   const [weeks, setWeeks] = useState<WeekInfo[]>([]);
@@ -118,10 +120,11 @@ export function BestBallScreen({
       <ErrorState
         message={error}
         hint={
-          <>
-            Expecting the server at {API_URL}. Start it with <Mono>npm run api</Mono>, and
-            make sure <Mono>npm run db:matchups</Mono> has been run at least once.
-          </>
+          <Trans
+            i18nKey="error.expectingServerMatchups"
+            values={{ url: API_URL }}
+            components={{ command: <Mono />, matchupCommand: <Mono /> }}
+          />
         }
         onRetry={() => {
           setLoading(true);
@@ -135,11 +138,11 @@ export function BestBallScreen({
     <View onLayout={measureHeader}>
       <AppBar right={<RoundButton name="fire" />} />
       <PageTitle
-        title="Best Ball"
+        title={t('bestball.title')}
         subtitle={
           selected
-            ? `Week ${selected.week} · ${selected.games} games · sorted by mismatch`
-            : 'Loading schedule…'
+            ? t('bestball.subtitle', { week: selected.week, games: selected.games })
+            : t('bestball.loadingSchedule')
         }
       />
       <View style={styles.gutter}>
@@ -158,10 +161,7 @@ export function BestBallScreen({
         </ChipRow>
       </View>
       {upcoming && selected?.played === 0 && (
-        <Notice style={[styles.gutter, styles.notice]}>
-          No game this week has kicked off. Every number here is built from prior seasons,
-          so a team that has changed coaches or personnel may not resemble its profile.
-        </Notice>
+        <Notice style={[styles.gutter, styles.notice]}>{t('bestball.noKickoffNotice')}</Notice>
       )}
     </View>
   );
@@ -182,7 +182,7 @@ export function BestBallScreen({
       refreshControl={
         <RefreshControl
           refreshing={refreshing}
-          tintColor={t.textDim}
+          tintColor={theme.textDim}
           onRefresh={() => {
             setRefreshing(true);
             load();
@@ -191,11 +191,10 @@ export function BestBallScreen({
       }
       ListEmptyComponent={
         loading ? (
-          <ActivityIndicator style={styles.loader} color={t.accent} />
+          <ActivityIndicator style={styles.loader} color={theme.accent} />
         ) : (
           <Text style={styles.empty}>
-            No predictions for this week yet. The weekly job only builds the week in play —
-            for the whole season, run <Mono>npm run db:matchups:bestball</Mono>.
+            <Trans i18nKey="bestball.empty" components={{ command: <Mono /> }} />
           </Text>
         )
       }
@@ -205,14 +204,14 @@ export function BestBallScreen({
   );
 }
 
-const sheet = (t: Theme) => ({
-  list: { flex: 1, backgroundColor: t.bg },
+const sheet = (theme: Theme) => ({
+  list: { flex: 1, backgroundColor: theme.bg },
   flexGrow: { flexGrow: 1 },
   gutter: { marginHorizontal: 16 },
   notice: { marginBottom: 14 },
   loader: { paddingVertical: 24 },
   empty: {
-    color: t.textDim,
+    color: theme.textDim,
     textAlign: 'center' as const,
     padding: 32,
     fontSize: getPixels(13),

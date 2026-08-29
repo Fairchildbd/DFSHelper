@@ -1,6 +1,7 @@
 import { memo } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { weightsOf, type RankedPlayer } from '../api';
+import { t as translate, useTranslation } from '../i18n';
 import {
   confidenceLabel,
   getPixels,
@@ -14,9 +15,9 @@ import { ScoreSplitBar } from './Bars';
 import { CardWash } from './Card';
 
 function roleNote(player: RankedPlayer): string | null {
-  if (player.position === 'QB' && player.rank_tier === 1) return 'Spot starter';
-  if (player.position === 'QB' && player.rank_tier === 2) return 'Backup — no starts';
-  if (player.qualified === false) return 'Too few snaps to rank';
+  if (player.position === 'QB' && player.rank_tier === 1) return translate('player.spotStarter');
+  if (player.position === 'QB' && player.rank_tier === 2) return translate('player.backupNoStarts');
+  if (player.qualified === false) return translate('player.tooFewSnaps');
   return null;
 }
 
@@ -37,9 +38,10 @@ export const PlayerRow = memo(function PlayerRow({
   player: RankedPlayer;
   onPress: (player: RankedPlayer) => void;
 }) {
-  const t = useTheme();
+  const { t } = useTranslation();
+  const theme = useTheme();
   const styles = useStyles(sheet);
-  const confidence = confidenceLabel(t, Number(player.athletic_confidence ?? 0));
+  const confidence = confidenceLabel(theme, Number(player.athletic_confidence ?? 0));
   const note = roleNote(player);
   const composite = Number(player.composite);
 
@@ -60,12 +62,12 @@ export const PlayerRow = memo(function PlayerRow({
         </Text>
         <Text style={styles.meta} numberOfLines={1}>
           {[
-            player.team ?? 'FA',
-            player.age != null ? `${Number(player.age).toFixed(0)}yr` : null,
-            `${player.years_experience ?? 0} exp`,
+            player.team ?? t('player.freeAgent'),
+            player.age != null ? t('player.age', { age: Number(player.age).toFixed(0) }) : null,
+            t('player.experience', { years: player.years_experience ?? 0 }),
           ]
             .filter(Boolean)
-            .join(' · ')}
+            .join(t('player.metaSeparator'))}
         </Text>
         <Text style={styles.note} numberOfLines={1}>
           {note ?? ''}
@@ -75,7 +77,7 @@ export const PlayerRow = memo(function PlayerRow({
         </View>
       </View>
       <View style={styles.scoreCol}>
-        <Text style={[styles.score, { color: scoreColor(t, composite) }]}>
+        <Text style={[styles.score, { color: scoreColor(theme, composite) }]}>
           {composite.toFixed(0)}
         </Text>
         <Text style={[styles.confidence, { color: confidence.color }]} numberOfLines={1}>
@@ -86,7 +88,7 @@ export const PlayerRow = memo(function PlayerRow({
   );
 });
 
-const sheet = (t: Theme) => ({
+const sheet = (theme: Theme) => ({
   card: {
     height: PLAYER_ROW_HEIGHT - CARD_GAP,
     marginHorizontal: 16,
@@ -97,30 +99,30 @@ const sheet = (t: Theme) => ({
     flexDirection: 'row' as const,
     alignItems: 'center' as const,
     gap: 10,
-    backgroundColor: t.surface,
+    backgroundColor: theme.surface,
     borderRadius: radius.card,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: t.border,
+    borderColor: theme.border,
     borderLeftWidth: 2,
-    borderLeftColor: t.accent,
+    borderLeftColor: theme.accent,
     overflow: 'hidden' as const,
   },
   pressed: { opacity: 0.75 },
 
   rankCol: { width: 34, alignItems: 'center' as const },
-  rank: { color: t.text, fontSize: getPixels(17), fontWeight: '700' as const },
-  rankLabel: { color: t.textFaint, fontSize: getPixels(10), fontWeight: '600' as const },
+  rank: { color: theme.text, fontSize: getPixels(17), fontWeight: '700' as const },
+  rankLabel: { color: theme.textFaint, fontSize: getPixels(10), fontWeight: '600' as const },
 
   main: { flex: 1 },
   name: {
-    color: t.text,
+    color: theme.text,
     fontSize: getPixels(16),
     lineHeight: NAME_LINE,
     fontWeight: '700' as const,
     letterSpacing: -0.2,
   },
-  meta: { color: t.textDim, fontSize: getPixels(12.5), lineHeight: META_LINE },
-  note: { color: t.warn, fontSize: getPixels(10.5), lineHeight: NOTE_LINE, fontWeight: '600' as const },
+  meta: { color: theme.textDim, fontSize: getPixels(12.5), lineHeight: META_LINE },
+  note: { color: theme.warn, fontSize: getPixels(10.5), lineHeight: NOTE_LINE, fontWeight: '600' as const },
   barSlot: { height: 4, marginTop: 9, justifyContent: 'center' as const },
 
   scoreCol: { alignItems: 'flex-end' as const, width: 82 },

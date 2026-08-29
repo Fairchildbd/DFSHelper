@@ -28,12 +28,12 @@ export function Icon({
   color?: string;
   style?: StyleProp<ViewStyle>;
 }) {
-  const t = useTheme();
+  const theme = useTheme();
   return (
     <MaterialCommunityIcons
       name={name}
       size={size}
-      color={color ?? t.text}
+      color={color ?? theme.text}
       style={style}
 
       accessibilityElementsHidden
@@ -55,7 +55,7 @@ export function IconPuck({
   round?: boolean;
   style?: StyleProp<ViewStyle>;
 }) {
-  const t = useTheme();
+  const theme = useTheme();
   const box = size === 'sm' ? 28 : size === 'lg' ? 48 : 36;
   const glyph = size === 'sm' ? 15 : size === 'lg' ? 24 : 19;
 
@@ -66,27 +66,27 @@ export function IconPuck({
           width: box,
           height: box,
           borderRadius: round ? box / 2 : radius.puck,
-          backgroundColor: t.accentSoft,
+          backgroundColor: theme.accentSoft,
           borderWidth: StyleSheet.hairlineWidth,
-          borderColor: t.accent,
+          borderColor: theme.accent,
           alignItems: 'center',
           justifyContent: 'center',
         },
         style,
       ]}
     >
-      <Icon name={name} size={glyph} color={color ?? t.accent} />
+      <Icon name={name} size={glyph} color={color ?? theme.accent} />
     </View>
   );
 }
 
-export function glowStyle(t: Theme, strength = 1): ViewStyle {
+export function glowStyle(theme: Theme, strength = 1): ViewStyle {
   return {
-    shadowColor: t.glow.shadowColor,
-    shadowOpacity: t.glow.shadowOpacity * strength,
-    shadowRadius: t.glow.shadowRadius * strength,
-    shadowOffset: t.glow.shadowOffset,
+    shadowColor: theme.glow.shadowColor,
+    shadowOpacity: theme.glow.shadowOpacity * strength,
+    shadowRadius: theme.glow.shadowRadius * strength,
+    shadowOffset: theme.glow.shadowOffset,
 
-    elevation: t.mode === 'light' ? 2 : 0,
+    elevation: theme.mode === 'light' ? 2 : 0,
   };
 }

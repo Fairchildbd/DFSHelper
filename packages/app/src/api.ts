@@ -1,4 +1,5 @@
 import { Platform } from 'react-native';
+import { t } from './i18n';
 
 const DEFAULT_HOST =
   Platform.OS === 'android' ? 'http://10.0.2.2:4000' : 'http://localhost:4000';
@@ -93,7 +94,13 @@ export interface PlayerDetail extends RankedPlayer {
 async function get<T>(path: string): Promise<T> {
   const res = await fetch(`${API_URL}${path}`);
   if (!res.ok) {
-    throw new Error(`${res.status} ${res.statusText} — ${API_URL}${path}`);
+    throw new Error(
+      t('api.requestFailed', {
+        status: res.status,
+        statusText: res.statusText,
+        url: `${API_URL}${path}`,
+      }),
+    );
   }
   return (await res.json()) as T;
 }

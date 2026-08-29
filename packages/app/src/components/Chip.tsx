@@ -15,7 +15,7 @@ export function Chip({
   onPress: () => void;
   style?: StyleProp<ViewStyle>;
 }) {
-  const t = useTheme();
+  const theme = useTheme();
   const styles = useStyles(sheet);
 
   return (
@@ -26,7 +26,7 @@ export function Chip({
       style={({ pressed }) => [
         styles.chip,
         active ? styles.chipActive : styles.chipIdle,
-        active && glowStyle(t, 0.7),
+        active && glowStyle(theme, 0.7),
         pressed && styles.pressed,
         style,
       ]}
@@ -74,7 +74,7 @@ export function NumberChip({
   active: boolean;
   onPress: () => void;
 }) {
-  const t = useTheme();
+  const theme = useTheme();
   const styles = useStyles(sheet);
 
   return (
@@ -85,7 +85,7 @@ export function NumberChip({
       style={({ pressed }) => [
         styles.numberChip,
         active ? styles.chipActive : styles.chipIdle,
-        active && glowStyle(t, 0.7),
+        active && glowStyle(theme, 0.7),
         pressed && styles.pressed,
       ]}
     >
@@ -105,7 +105,7 @@ export function Segmented<K extends string>({
   value: K;
   onChange: (key: K) => void;
 }) {
-  const t = useTheme();
+  const theme = useTheme();
   const styles = useStyles(sheet);
 
   return (
@@ -121,7 +121,7 @@ export function Segmented<K extends string>({
             style={({ pressed }) => [
               styles.segment,
               active && styles.segmentActive,
-              active && glowStyle(t, 0.5),
+              active && glowStyle(theme, 0.5),
               pressed && styles.pressed,
             ]}
           >
@@ -138,7 +138,7 @@ export function Segmented<K extends string>({
   );
 }
 
-const sheet = (t: Theme) => ({
+const sheet = (theme: Theme) => ({
   chip: {
     flexDirection: 'row' as const,
     alignItems: 'center' as const,
@@ -148,13 +148,13 @@ const sheet = (t: Theme) => ({
     borderRadius: radius.chip,
     borderWidth: StyleSheet.hairlineWidth,
   },
-  chipIdle: { backgroundColor: t.surface, borderColor: t.border },
-  chipActive: { backgroundColor: t.accent, borderColor: t.accent },
+  chipIdle: { backgroundColor: theme.surface, borderColor: theme.border },
+  chipActive: { backgroundColor: theme.accent, borderColor: theme.accent },
   pressed: { opacity: 0.7 },
 
   label: { fontSize: getPixels(13), fontWeight: '600' as const },
-  labelIdle: { color: t.textDim },
-  labelActive: { color: t.onAccent, fontWeight: '700' as const },
+  labelIdle: { color: theme.textDim },
+  labelActive: { color: theme.onAccent, fontWeight: '700' as const },
 
   badge: {
     minWidth: 20,
@@ -163,11 +163,11 @@ const sheet = (t: Theme) => ({
     borderRadius: radius.chip,
     alignItems: 'center' as const,
   },
-  badgeIdle: { backgroundColor: t.surfaceAlt },
+  badgeIdle: { backgroundColor: theme.surfaceAlt },
   badgeActive: { backgroundColor: 'rgba(0, 0, 0, 0.22)' },
   badgeText: { fontSize: getPixels(11), fontWeight: '700' as const },
-  badgeTextIdle: { color: t.textFaint },
-  badgeTextActive: { color: t.onAccent },
+  badgeTextIdle: { color: theme.textFaint },
+  badgeTextActive: { color: theme.onAccent },
 
   rowScroll: { marginHorizontal: -16, flexGrow: 0 },
   row: { flexDirection: 'row' as const, gap: 8, paddingHorizontal: 16, paddingVertical: 10 },
@@ -184,10 +184,10 @@ const sheet = (t: Theme) => ({
 
   segmented: {
     flexDirection: 'row' as const,
-    backgroundColor: t.surface,
+    backgroundColor: theme.surface,
     borderRadius: radius.chip,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: t.border,
+    borderColor: theme.border,
     padding: 3,
   },
   segment: {
@@ -200,7 +200,7 @@ const sheet = (t: Theme) => ({
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: 'transparent',
   },
-  segmentActive: { backgroundColor: t.accentSoft, borderColor: t.accent },
+  segmentActive: { backgroundColor: theme.accentSoft, borderColor: theme.accent },
   segmentLabel: { fontSize: getPixels(12.5), fontWeight: '600' as const },
-  segmentLabelActive: { color: t.accent, fontWeight: '700' as const },
+  segmentLabelActive: { color: theme.accent, fontWeight: '700' as const },
 });

@@ -1,4 +1,5 @@
 import { StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native';
+import { useTranslation } from '../i18n';
 import { getPixels, radius, useStyles, useTheme, type Theme } from '../theme';
 
 function clamp(pct: number): number {
@@ -16,7 +17,7 @@ export function Meter({
   height?: number;
   style?: StyleProp<ViewStyle>;
 }) {
-  const t = useTheme();
+  const theme = useTheme();
   const styles = useStyles(sheet);
 
   return (
@@ -26,7 +27,7 @@ export function Meter({
           height,
           borderRadius: height / 2,
           width: `${clamp(percent)}%`,
-          backgroundColor: color ?? t.accent,
+          backgroundColor: color ?? theme.accent,
         }}
       />
     </View>
@@ -52,7 +53,7 @@ export function StatRow({
   color?: string;
   style?: StyleProp<ViewStyle>;
 }) {
-  const t = useTheme();
+  const theme = useTheme();
   const styles = useStyles(sheet);
 
   return (
@@ -64,7 +65,7 @@ export function StatRow({
         {weight ? <Text style={styles.statWeight}>{weight}</Text> : null}
         <Text style={styles.statValue}>{value}</Text>
       </View>
-      <Meter percent={percent ?? 0} color={percent == null ? t.textFaint : color} />
+      <Meter percent={percent ?? 0} color={percent == null ? theme.textFaint : color} />
       {note ? (
         <Text style={styles.statNote} numberOfLines={1}>
           {note}
@@ -90,7 +91,8 @@ export function ScoreSplitBar({
 
   inline?: boolean;
 }) {
-  const t = useTheme();
+  const { t } = useTranslation();
+  const theme = useTheme();
   const styles = useStyles(sheet);
   if (!weights) return null;
 
@@ -100,16 +102,16 @@ export function ScoreSplitBar({
   if (athletic + college + nfl === 0) return null;
 
   const segments = [
-    { value: athletic, color: t.athletic, label: 'workout' },
-    { value: college, color: t.college, label: 'college' },
-    { value: nfl, color: t.production, label: 'NFL' },
+    { key: 'athletic', value: athletic, color: theme.athletic, label: t('split.workout') },
+    { key: 'college', value: college, color: theme.college, label: t('split.college') },
+    { key: 'nfl', value: nfl, color: theme.production, label: t('split.nfl') },
   ].filter((s) => s.value > 0);
 
   const legend = (
     <View style={styles.splitLegend}>
       {segments.map((s) => (
-        <Text key={s.label} style={[styles.splitLegendText, { color: s.color }]}>
-          {s.value}% {s.label}
+        <Text key={s.key} style={[styles.splitLegendText, { color: s.color }]}>
+          {t('split.legendEntry', { percent: s.value, label: s.label })}
         </Text>
       ))}
     </View>
@@ -118,7 +120,7 @@ export function ScoreSplitBar({
   const bar = (
     <View style={[styles.splitBar, inline && styles.splitBarInline]}>
       {segments.map((s) => (
-        <View key={s.label} style={{ flex: s.value, height: '100%', backgroundColor: s.color }} />
+        <View key={s.key} style={{ flex: s.value, height: '100%', backgroundColor: s.color }} />
       ))}
     </View>
   );
@@ -140,20 +142,20 @@ export function ScoreSplitBar({
   );
 }
 
-const sheet = (t: Theme) => ({
-  track: { backgroundColor: t.surfaceAlt, overflow: 'hidden' as const, width: '100%' as const },
+const sheet = (theme: Theme) => ({
+  track: { backgroundColor: theme.surfaceAlt, overflow: 'hidden' as const, width: '100%' as const },
 
   statRow: { gap: 5, paddingVertical: 5 },
   statHead: { flexDirection: 'row' as const, alignItems: 'baseline' as const, gap: 8 },
-  statLabel: { color: t.text, fontSize: getPixels(12.5), fontWeight: '600' as const, flex: 1 },
-  statWeight: { color: t.textDim, fontSize: getPixels(11.5), fontVariant: ['tabular-nums' as const] },
+  statLabel: { color: theme.text, fontSize: getPixels(12.5), fontWeight: '600' as const, flex: 1 },
+  statWeight: { color: theme.textDim, fontSize: getPixels(11.5), fontVariant: ['tabular-nums' as const] },
   statValue: {
-    color: t.text,
+    color: theme.text,
     fontSize: getPixels(12.5),
     fontWeight: '700' as const,
     fontVariant: ['tabular-nums' as const],
   },
-  statNote: { color: t.textFaint, fontSize: getPixels(10.5) },
+  statNote: { color: theme.textFaint, fontSize: getPixels(10.5) },
 
   splitWrap: { gap: 6 },
   splitInline: { flexDirection: 'row' as const, alignItems: 'center' as const, gap: 10 },
@@ -165,6 +167,6 @@ const sheet = (t: Theme) => ({
     height: 4,
     borderRadius: radius.bar,
     overflow: 'hidden' as const,
-    backgroundColor: t.surfaceAlt,
+    backgroundColor: theme.surfaceAlt,
   },
 });

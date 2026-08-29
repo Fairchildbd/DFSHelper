@@ -23,6 +23,7 @@ import {
   RoundButton,
   useBottomInset,
 } from '../components/ui';
+import { Trans, useTranslation } from '../i18n';
 import { getPixels, radius, useStyles, useTheme, type Theme } from '../theme';
 
 const PAGE_SIZE = 50;
@@ -44,7 +45,8 @@ export function RankingsScreen({
 }: {
   onSelectPlayer: (player: RankedPlayer) => void;
 }) {
-  const t = useTheme();
+  const { t } = useTranslation();
+  const theme = useTheme();
   const styles = useStyles(sheet);
 
   const [position, setPosition] = useState<string | null>(null);
@@ -123,15 +125,15 @@ export function RankingsScreen({
       <View onLayout={measureHeader}>
         <AppBar right={<RoundButton name="fire" />} />
         <PageTitle
-          title="Rankings"
-          subtitle={`${total.toLocaleString()} players · composite score`}
+          title={t('rankings.title')}
+          subtitle={t('rankings.subtitle', { total: total.toLocaleString() })}
         />
         <View style={styles.searchWrap}>
-          <Icon name="magnify" size={18} color={t.textFaint} />
+          <Icon name="magnify" size={18} color={theme.textFaint} />
           <TextInput
             style={styles.searchInput}
-            placeholder="Search players"
-            placeholderTextColor={t.textFaint}
+            placeholder={t('rankings.searchPlaceholder')}
+            placeholderTextColor={theme.textFaint}
             value={search}
             onChangeText={setSearch}
             autoCorrect={false}
@@ -141,7 +143,11 @@ export function RankingsScreen({
         </View>
         <View style={styles.gutter}>
           <ChipRow>
-            <Chip label="All" active={position === null} onPress={() => setPosition(null)} />
+            <Chip
+              label={t('rankings.allPositions')}
+              active={position === null}
+              onPress={() => setPosition(null)}
+            />
             {POSITIONS.map((p) => (
               <Chip
                 key={p}
@@ -154,7 +160,7 @@ export function RankingsScreen({
         </View>
       </View>
     ),
-    [position, search, total, styles, t, measureHeader],
+    [position, search, total, styles, theme, measureHeader, t],
   );
 
   if (error) {
@@ -162,11 +168,11 @@ export function RankingsScreen({
       <ErrorState
         message={error}
         hint={
-          <>
-            Expecting the server at {API_URL}. Start it with <Mono>npm run api</Mono>, or set{' '}
-            <Mono>EXPO_PUBLIC_API_URL</Mono> to your machine’s LAN address if you’re on a
-            physical device.
-          </>
+          <Trans
+            i18nKey="error.expectingServerLan"
+            values={{ url: API_URL }}
+            components={{ command: <Mono />, envVar: <Mono /> }}
+          />
         }
         onRetry={() => {
           setLoading(true);
@@ -195,7 +201,7 @@ export function RankingsScreen({
       refreshControl={
         <RefreshControl
           refreshing={refreshing}
-          tintColor={t.textDim}
+          tintColor={theme.textDim}
           onRefresh={() => {
             setRefreshing(true);
             load(0);
@@ -204,13 +210,13 @@ export function RankingsScreen({
       }
       ListEmptyComponent={
         loading ? (
-          <ActivityIndicator style={styles.loader} color={t.accent} />
+          <ActivityIndicator style={styles.loader} color={theme.accent} />
         ) : (
-          <Empty>No players match that filter.</Empty>
+          <Empty>{t('rankings.empty')}</Empty>
         )
       }
       ListFooterComponent={
-        loadingMore ? <ActivityIndicator style={styles.loader} color={t.accent} /> : null
+        loadingMore ? <ActivityIndicator style={styles.loader} color={theme.accent} /> : null
       }
       style={styles.list}
       contentContainerStyle={[listPadding, players.length === 0 && styles.flexGrow]}
@@ -218,8 +224,8 @@ export function RankingsScreen({
   );
 }
 
-const sheet = (t: Theme) => ({
-  list: { flex: 1, backgroundColor: t.bg },
+const sheet = (theme: Theme) => ({
+  list: { flex: 1, backgroundColor: theme.bg },
   flexGrow: { flexGrow: 1 },
   gutter: { marginHorizontal: 16 },
 
@@ -230,14 +236,14 @@ const sheet = (t: Theme) => ({
     marginHorizontal: 16,
     paddingHorizontal: 13,
     height: 44,
-    backgroundColor: t.surface,
+    backgroundColor: theme.surface,
     borderRadius: radius.chip,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: t.border,
+    borderColor: theme.border,
   },
   searchInput: {
     flex: 1,
-    color: t.text,
+    color: theme.text,
     fontSize: getPixels(15),
     padding: 0,
   },

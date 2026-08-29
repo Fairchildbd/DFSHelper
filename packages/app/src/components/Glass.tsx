@@ -12,13 +12,13 @@ export function Glass({
   radius: number;
   style?: StyleProp<ViewStyle>;
 }) {
-  const t = useTheme();
+  const theme = useTheme();
 
   if (isLiquidGlassAvailable()) {
     return (
       <GlassView
         glassEffectStyle="regular"
-        colorScheme={t.mode}
+        colorScheme={theme.mode}
         style={[{ borderRadius: radius }, style]}
       >
         {children}
@@ -32,15 +32,15 @@ export function Glass({
     <View style={[{ borderRadius: radius, overflow: 'hidden' }, style]}>
       {blurs && (
         <BlurView
-          tint={t.blurTint}
-          intensity={t.blurIntensity}
+          tint={theme.blurTint}
+          intensity={theme.blurIntensity}
           style={StyleSheet.absoluteFill}
         />
       )}
       <View
         style={[
           StyleSheet.absoluteFill,
-          { backgroundColor: blurs ? t.glassTint : t.bgElevated },
+          { backgroundColor: blurs ? theme.glassTint : theme.bgElevated },
         ]}
         pointerEvents="none"
       />
@@ -50,7 +50,7 @@ export function Glass({
           {
             borderRadius: radius,
             borderWidth: StyleSheet.hairlineWidth,
-            borderColor: t.glassBorder,
+            borderColor: theme.glassBorder,
           },
         ]}
         pointerEvents="none"
@@ -62,7 +62,7 @@ export function Glass({
           left: radius / 2,
           right: radius / 2,
           height: StyleSheet.hairlineWidth,
-          backgroundColor: t.glassHighlight,
+          backgroundColor: theme.glassHighlight,
         }}
         pointerEvents="none"
       />

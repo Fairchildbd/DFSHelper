@@ -1,6 +1,7 @@
 import { memo } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import type { MatchupSummary } from '../api';
+import { useTranslation } from '../i18n';
 import { describeEdge, formatKickoff } from '../matchupFormat';
 import { getPixels, radius, scoreColor, useStyles, useTheme, type Theme } from '../theme';
 import { CardWash } from './Card';
@@ -33,7 +34,8 @@ export const MatchupRow = memo(function MatchupRow({
   rank: number;
   onPress: (game: MatchupSummary) => void;
 }) {
-  const t = useTheme();
+  const { t } = useTranslation();
+  const theme = useTheme();
   const styles = useStyles(sheet);
 
   const edge = game.top_edge_value == null ? null : Number(game.top_edge_value);
@@ -41,7 +43,7 @@ export const MatchupRow = memo(function MatchupRow({
   const gap = Number(game.mismatch_score);
   const shootout = game.shootout_score == null ? null : Number(game.shootout_score);
   const score = shootout ?? gap;
-  const tint = scoreColor(t, score);
+  const tint = scoreColor(theme, score);
 
   return (
     <Pressable
@@ -65,9 +67,12 @@ export const MatchupRow = memo(function MatchupRow({
           )}
         </View>
         <Text style={styles.kickoff} numberOfLines={1}>
-          {isFinal ? 'Final' : formatKickoff(game.gameday, game.gametime)}
+          {isFinal ? t('row.final') : formatKickoff(game.gameday, game.gametime)}
           {game.away_coach && game.home_coach
-            ? ` · ${lastName(game.away_coach)} vs ${lastName(game.home_coach)}`
+            ? t('row.coachVsCoach', {
+                away: lastName(game.away_coach),
+                home: lastName(game.home_coach),
+              })
             : ''}
         </Text>
         <View style={styles.track}>
@@ -85,25 +90,30 @@ export const MatchupRow = memo(function MatchupRow({
           {isFinal
             ? `${
                 game.top10_hits == null
-                  ? 'No fantasy lines recorded'
-                  : `${game.top10_hits} of our top 10 finished in the real top 10`
-              }${game.backfilled ? ' · graded after the fact' : ''}`
-            : `${game.edge_count} mismatch${game.edge_count === 1 ? '' : 'es'} · gap ${gap.toFixed(
-                0,
-              )}${
+                  ? t('row.noFantasyLines')
+                  : t('row.top10Hits', { hits: game.top10_hits })
+              }${game.backfilled ? t('row.gradedAfterTheFact') : ''}`
+            : `${t('row.mismatchSummary', {
+                count: game.edge_count,
+                gap: gap.toFixed(0),
+              })}${
                 game.total_line != null
-                  ? ` · total ${Number(game.total_line).toFixed(1)}`
-                  : ' · no line yet'
+                  ? t('row.totalLine', { total: Number(game.total_line).toFixed(1) })
+                  : t('row.noLineYet')
               }`}
         </Text>
       </View>
       <View style={styles.scoreCol}>
         <Text style={[styles.score, { color: tint }]}>{score.toFixed(0)}</Text>
         <Text style={styles.scoreCaption}>
-          {isFinal ? 'predicted' : shootout == null ? 'gap' : 'scoring'}
+          {isFinal
+            ? t('row.captionPredicted')
+            : shootout == null
+              ? t('row.captionGap')
+              : t('row.captionScoring')}
         </Text>
-        <View style={[styles.flame, glowStyle(t, 0.5)]}>
-          <Icon name="fire" size={17} color={t.accent} />
+        <View style={[styles.flame, glowStyle(theme, 0.5)]}>
+          <Icon name="fire" size={17} color={theme.accent} />
         </View>
       </View>
     </Pressable>
@@ -115,7 +125,7 @@ function lastName(name: string): string {
   return parts.length > 1 ? parts.slice(1).join(' ') : name;
 }
 
-const sheet = (t: Theme) => ({
+const sheet = (theme: Theme) => ({
   card: {
     height: MATCHUP_ROW_HEIGHT - CARD_GAP,
     marginHorizontal: 16,
@@ -125,12 +135,12 @@ const sheet = (t: Theme) => ({
     paddingLeft: 12,
     flexDirection: 'row' as const,
     gap: 10,
-    backgroundColor: t.surface,
+    backgroundColor: theme.surface,
     borderRadius: radius.card,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: t.border,
+    borderColor: theme.border,
     borderLeftWidth: 2,
-    borderLeftColor: t.accent,
+    borderLeftColor: theme.accent,
     overflow: 'hidden' as const,
   },
   pressed: { opacity: 0.75 },
@@ -139,50 +149,50 @@ const sheet = (t: Theme) => ({
     width: 24,
     height: 24,
     borderRadius: 7,
-    backgroundColor: t.accentSoft,
+    backgroundColor: theme.accentSoft,
     alignItems: 'center' as const,
     justifyContent: 'center' as const,
     marginTop: 2,
   },
-  rankText: { color: t.accent, fontSize: getPixels(12), fontWeight: '700' as const },
+  rankText: { color: theme.accent, fontSize: getPixels(12), fontWeight: '700' as const },
 
   main: { flex: 1 },
   teamLine: { flexDirection: 'row' as const, alignItems: 'baseline' as const, gap: 10 },
   teams: {
-    color: t.text,
+    color: theme.text,
     fontSize: getPixels(19),
     lineHeight: TEAMS_LINE,
     fontWeight: '800' as const,
     letterSpacing: 0.2,
     flexShrink: 1,
   },
-  at: { color: t.textFaint, fontWeight: '500' as const },
+  at: { color: theme.textFaint, fontWeight: '500' as const },
   finalScore: {
-    color: t.textDim,
+    color: theme.textDim,
     fontSize: getPixels(14),
     fontWeight: '700' as const,
     fontVariant: ['tabular-nums' as const],
   },
-  kickoff: { color: t.textDim, fontSize: getPixels(11.5), lineHeight: KICKOFF_LINE },
+  kickoff: { color: theme.textDim, fontSize: getPixels(11.5), lineHeight: KICKOFF_LINE },
 
   track: {
     height: 3,
     borderRadius: 1.5,
-    backgroundColor: t.surfaceAlt,
+    backgroundColor: theme.surfaceAlt,
     overflow: 'hidden' as const,
     marginTop: 9,
   },
   fill: { height: 3, borderRadius: 1.5 },
 
   edge: {
-    color: t.accent,
+    color: theme.accent,
     fontSize: getPixels(12.5),
     lineHeight: EDGE_LINE,
     height: EDGE_LINE * 2,
     fontWeight: '600' as const,
     marginTop: 4,
   },
-  meta: { color: t.textDim, fontSize: getPixels(11.5), lineHeight: META_LINE },
+  meta: { color: theme.textDim, fontSize: getPixels(11.5), lineHeight: META_LINE },
 
   scoreCol: { width: 58, alignItems: 'center' as const },
   score: {
@@ -191,15 +201,15 @@ const sheet = (t: Theme) => ({
     fontWeight: '800' as const,
     fontVariant: ['tabular-nums' as const],
   },
-  scoreCaption: { color: t.textDim, fontSize: getPixels(10), fontWeight: '500' as const },
+  scoreCaption: { color: theme.textDim, fontSize: getPixels(10), fontWeight: '500' as const },
   flame: {
     marginTop: 10,
     width: 34,
     height: 34,
     borderRadius: 17,
-    backgroundColor: t.accentSoft,
+    backgroundColor: theme.accentSoft,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: t.accent,
+    borderColor: theme.accent,
     alignItems: 'center' as const,
     justifyContent: 'center' as const,
   },

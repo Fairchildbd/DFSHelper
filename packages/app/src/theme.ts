@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
 import { PixelRatio, StyleSheet, useColorScheme } from 'react-native';
+import { t } from './i18n';
 
 export type Mode = 'dark' | 'light';
 
@@ -165,35 +166,35 @@ type NamedStyles<T> = { [P in keyof T]: object };
 
 const styleCache = new WeakMap<object, Partial<Record<Mode, unknown>>>();
 
-export function useStyles<T extends NamedStyles<T>>(factory: (t: Theme) => T): T {
-  const t = useTheme();
+export function useStyles<T extends NamedStyles<T>>(factory: (theme: Theme) => T): T {
+  const theme = useTheme();
   return useMemo(() => {
     let entry = styleCache.get(factory);
     if (!entry) {
       entry = {};
       styleCache.set(factory, entry);
     }
-    if (!entry[t.mode]) entry[t.mode] = StyleSheet.create(factory(t));
-    return entry[t.mode] as T;
-  }, [factory, t]);
+    if (!entry[theme.mode]) entry[theme.mode] = StyleSheet.create(factory(theme));
+    return entry[theme.mode] as T;
+  }, [factory, theme]);
 }
 
 export const SCORE_MIDPOINT = 45;
 
-export function scoreColor(t: Theme, score: number | null): string {
-  if (score == null) return t.textFaint;
-  return score > SCORE_MIDPOINT ? t.accent : t.even;
+export function scoreColor(theme: Theme, score: number | null): string {
+  if (score == null) return theme.textFaint;
+  return score > SCORE_MIDPOINT ? theme.accent : theme.even;
 }
 
 export function confidenceLabel(
-  t: Theme,
+  theme: Theme,
   confidence: number,
 ): { label: string; color: string } {
-  if (confidence >= 0.85) return { label: 'Full workout', color: t.accent };
-  if (confidence >= 0.6) return { label: 'Most drills', color: t.accent };
-  if (confidence >= 0.35) return { label: 'Partial', color: t.warn };
-  if (confidence > 0) return { label: 'Sparse', color: t.danger };
-  return { label: 'No workout', color: t.textFaint };
+  if (confidence >= 0.85) return { label: t('confidence.full'), color: theme.accent };
+  if (confidence >= 0.6) return { label: t('confidence.most'), color: theme.accent };
+  if (confidence >= 0.35) return { label: t('confidence.partial'), color: theme.warn };
+  if (confidence > 0) return { label: t('confidence.sparse'), color: theme.danger };
+  return { label: t('confidence.none'), color: theme.textFaint };
 }
 
 export function getPixels(size: number): number {

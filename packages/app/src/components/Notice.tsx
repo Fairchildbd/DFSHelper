@@ -14,14 +14,14 @@ export function Notice({
   tone?: 'accent' | 'warn';
   style?: StyleProp<ViewStyle>;
 }) {
-  const t = useTheme();
+  const theme = useTheme();
   const styles = useStyles(sheet);
-  const color = tone === 'warn' ? t.warn : t.accent;
+  const color = tone === 'warn' ? theme.warn : theme.accent;
 
   return (
     <View style={[styles.notice, { borderLeftColor: color }, style]}>
       <CardWash />
-      <View style={[styles.puck, { borderColor: color, backgroundColor: t.accentSoft }]}>
+      <View style={[styles.puck, { borderColor: color, backgroundColor: theme.accentSoft }]}>
         <Icon name={icon} size={22} color={color} />
       </View>
       <Text style={styles.text}>{children}</Text>
@@ -38,27 +38,27 @@ export function InlineNote({
   icon?: IconName;
   style?: StyleProp<ViewStyle>;
 }) {
-  const t = useTheme();
+  const theme = useTheme();
   const styles = useStyles(sheet);
 
   return (
     <View style={[styles.inline, style]}>
-      <Icon name={icon} size={15} color={t.textDim} style={styles.inlineIcon} />
+      <Icon name={icon} size={15} color={theme.textDim} style={styles.inlineIcon} />
       <Text style={styles.inlineText}>{children}</Text>
     </View>
   );
 }
 
-const sheet = (t: Theme) => ({
+const sheet = (theme: Theme) => ({
   notice: {
     flexDirection: 'row' as const,
     alignItems: 'center' as const,
     gap: 14,
     padding: 14,
     borderRadius: radius.card,
-    backgroundColor: t.surface,
+    backgroundColor: theme.surface,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: t.border,
+    borderColor: theme.border,
     borderLeftWidth: 2,
     overflow: 'hidden' as const,
   },
@@ -72,7 +72,7 @@ const sheet = (t: Theme) => ({
   },
   text: {
     flex: 1,
-    color: t.text,
+    color: theme.text,
     fontSize: getPixels(12.5),
     lineHeight: getPixels(18.5),
   },
@@ -82,12 +82,12 @@ const sheet = (t: Theme) => ({
     gap: 9,
     padding: 11,
     borderRadius: radius.puck,
-    backgroundColor: t.surfaceAlt,
+    backgroundColor: theme.surfaceAlt,
   },
   inlineIcon: { marginTop: 1 },
   inlineText: {
     flex: 1,
-    color: t.textDim,
+    color: theme.textDim,
     fontSize: getPixels(11.5),
     lineHeight: getPixels(16.5),
   },

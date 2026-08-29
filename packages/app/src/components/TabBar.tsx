@@ -31,7 +31,7 @@ export function TabBar<K extends string>({
   value: K;
   onChange: (key: K) => void;
 }) {
-  const t = useTheme();
+  const theme = useTheme();
   const styles = useStyles(sheet);
   const insets = useSafeAreaInsets();
 
@@ -55,11 +55,11 @@ export function TabBar<K extends string>({
                   style={({ pressed }) => [
                     styles.tab,
                     active && styles.tabActive,
-                    active && glowStyle(t, 0.55),
+                    active && glowStyle(theme, 0.55),
                     pressed && styles.pressed,
                   ]}
                 >
-                  <Icon name={item.icon} size={21} color={active ? t.accent : t.textDim} />
+                  <Icon name={item.icon} size={21} color={active ? theme.accent : theme.textDim} />
                   <Text style={[styles.label, active ? styles.labelActive : styles.labelIdle]}>
                     {item.label}
                   </Text>
@@ -73,7 +73,7 @@ export function TabBar<K extends string>({
   );
 }
 
-const sheet = (t: Theme) => ({
+const sheet = (theme: Theme) => ({
   dock: {
     position: 'absolute' as const,
     left: 0,
@@ -86,7 +86,7 @@ const sheet = (t: Theme) => ({
     borderRadius: PILL_RADIUS,
 
     ...Platform.select({
-      android: { elevation: 8, backgroundColor: t.bgElevated },
+      android: { elevation: 8, backgroundColor: theme.bgElevated },
       default: {},
     }),
   },
@@ -107,9 +107,9 @@ const sheet = (t: Theme) => ({
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: 'transparent',
   },
-  tabActive: { backgroundColor: t.accentSoft, borderColor: t.accent },
+  tabActive: { backgroundColor: theme.accentSoft, borderColor: theme.accent },
   pressed: { opacity: 0.65 },
   label: { fontSize: getPixels(11), fontWeight: '600' as const },
-  labelIdle: { color: t.textDim },
-  labelActive: { color: t.accent, fontWeight: '700' as const },
+  labelIdle: { color: theme.textDim },
+  labelActive: { color: theme.accent, fontWeight: '700' as const },
 });
