@@ -6,6 +6,7 @@ export const en = {
   'app.back.matchup': 'Matchup',
   'app.back.week': 'This Week',
   'app.back.rankings': 'Rankings',
+  'app.back.label': 'Back',
 
   'api.requestFailed': '{{status}} {{statusText}} — {{url}}',
 
@@ -111,6 +112,9 @@ export const en = {
     'No DraftKings salaries imported for this week, so no lineup can be built. Export the slate from the contest lobby and run <command>npm run ingest:dk -- --file DKSalaries.csv</command>.',
   'week.slateLabel_one': 'Main slate · {{count}} game · {{players}} priced',
   'week.slateLabel_other': 'Main slate · {{count}} games · {{players}} priced',
+  'week.allGames': 'All',
+  'week.sectionEyebrow_one': '{{title}} · {{count}} game',
+  'week.sectionEyebrow_other': '{{title}} · {{count}} games',
   'player.freeAgentLong': 'Free agent',
   'player.ageYears': '{{age}} yrs old',
   'player.seasons_one': '{{count}} season',
@@ -132,7 +136,6 @@ export const en = {
   'player.productionTitle': 'Production',
   'player.productionSubtitle': 'Per-game rates, recent seasons',
   'player.rawWorkout': 'Raw workout',
-  'player.rawSchool': '· {{school}}',
   'player.noDrills': 'No drills recorded',
   'player.confidenceLine': '{{label}} · {{recorded}}% recorded · {{weight}}% of this ranking',
   'player.shrinkNote':
@@ -145,12 +148,12 @@ export const en = {
   'drill.unit.seconds': 's',
   'drill.unit.reps': ' reps',
   'drill.unit.inches': '"',
-  'drill.forty': '40: {{value}}',
-  'drill.bench': 'Bench: {{value}}',
-  'drill.vertical': 'Vert: {{value}}"',
-  'drill.broad': 'Broad: {{value}}"',
-  'drill.cone': '3C: {{value}}',
-  'drill.shuttle': 'Shuttle: {{value}}',
+  'drill.label.forty': '40',
+  'drill.label.bench': 'Bench',
+  'drill.label.vertical': 'Vert',
+  'drill.label.broad': 'Broad',
+  'drill.label.cone': '3C',
+  'drill.label.shuttle': 'Shuttle',
   'lineup.showdownTitle': 'Showdown captain',
   'lineup.gamePrefix': '{{label}} · ',
   'lineup.showdownSubtitle':
@@ -158,7 +161,9 @@ export const en = {
   'lineup.showdownNote':
     'Three entries rather than one, because six players from a single game share a ball and a scoreboard: one betting on each offense having the day, and one for a game that never gets going. Two receivers from a team at most, and never without their quarterback \u2014 a third and fourth receiver are competing with the first two for the same throws.',
   'lineup.classicSubtitle': 'Millionaire Maker · QB, 2 RB, 3 WR, TE, FLEX, DST.',
-  'lineup.stackingTitle': 'Stacking {{game}}',
+  'lineup.stackingLead': 'Stacking {{game}}. ',
+  'lineup.recommendedMarker': ' ·',
+  'lineup.noLineupAvailable': 'No lineup available.',
   'lineup.stackedPlayers': '{{count}} of the nine from this game',
   'lineup.stackMismatch': ' · mismatch {{score}}, the highest on the slate',
   'lineup.cannotBuild': 'Can’t build a lineup',
@@ -188,7 +193,9 @@ export const en = {
   'lineup.lock': 'Lock',
   'lineup.locked': 'Locked',
   'lineup.drop': 'Drop',
-  'matchup.back': 'Matchups',
+  'matchup.section.staffs': 'Staffs',
+  'matchup.section.lanes': 'Lane edges',
+  'matchup.section.players': 'Players',
   'matchup.unit.offense': 'Off',
   'matchup.unit.defense': 'DEF',
   'matchup.unit.special': 'SPT',
@@ -222,8 +229,6 @@ export const en = {
   'matchup.spread': ', spread {{spread}}',
   'matchup.noBettingLine':
     'No betting line published yet. The talent gap is unaffected; the scoring read is built from the units and pace alone.',
-  'matchup.coachingStaffs': 'Coaching staffs',
-  'matchup.laneEdges': 'Lane edges',
   'matchup.laneEdgesHint':
     'Each unit’s percentile against the same unit league-wide, minus how well the opponent defends it. Positive favours the offense.',
   'matchup.edgeSub': '{{lane}} · unit {{offense}} vs defense {{defense}}',
@@ -265,6 +270,8 @@ export const en = {
   'about.lede':
     'A player’s ranking says how good he is. His coach’s tendencies say how he will be <em>used</em>. The opponent’s profile says how much that usage is worth this week. A mismatch is where those three disagree in the offense’s favour \u2014 and this app is a way of finding them.',
 
+
+  'about.weightPercent': '{{weight}}%',
 
   'about.lanes.title': 'Lanes',
   'about.lanes.hint': 'The unit-vs-unit matchups a game is broken into',

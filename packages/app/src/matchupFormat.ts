@@ -2,54 +2,56 @@ import { TZDate } from '@date-fns/tz';
 
 import type { GameShape } from './api';
 import { t, type MessageKey } from './i18n';
-import { theme } from './theme';
+import type { Theme } from './theme';
 
-export function edgeColor(edge: number | null): string {
+export function edgeColor(theme: Theme, edge: number | null): string {
   if (edge == null) return theme.textFaint;
-  if (edge >= 45) return '#34D399';
-  if (edge >= 20) return '#A3E635';
-  if (edge > -20) return '#94A3B8';
-  if (edge > -45) return '#FBBF24';
-  return '#F87171';
+  if (edge >= 45) return theme.great;
+  if (edge >= 20) return theme.good;
+  if (edge > -20) return theme.even;
+  if (edge > -45) return theme.weak;
+  return theme.bad;
 }
 
-export function mismatchColor(score: number): string {
-  if (score >= 70) return '#34D399';
-  if (score >= 58) return '#A3E635';
-  if (score >= 45) return '#94A3B8';
+export function mismatchColor(theme: Theme, score: number): string {
+  if (score >= 70) return theme.great;
+  if (score >= 58) return theme.good;
+  if (score >= 45) return theme.even;
   return theme.textDim;
 }
 
-export function shootoutColor(score: number): string {
-  if (score >= 62) return '#34D399';
-  if (score >= 54) return '#A3E635';
-  if (score >= 44) return '#94A3B8';
+export function shootoutColor(theme: Theme, score: number): string {
+  if (score >= 62) return theme.great;
+  if (score >= 54) return theme.good;
+  if (score >= 44) return theme.even;
   return theme.textDim;
 }
+
+type ShapeTone = 'great' | 'good' | 'even' | 'weak';
 
 interface ShapeCopy {
   title: string;
   blurb: string;
-  color: string;
+  tone: ShapeTone;
 }
 
-const SHAPE_KEYS: Record<GameShape, { title: MessageKey; blurb: MessageKey }> = {
-  shootout: { title: 'shape.shootout.title', blurb: 'shape.shootout.blurb' },
-  one_sided: { title: 'shape.oneSided.title', blurb: 'shape.oneSided.blurb' },
-  low_scoring: { title: 'shape.lowScoring.title', blurb: 'shape.lowScoring.blurb' },
-  defensive: { title: 'shape.defensive.title', blurb: 'shape.defensive.blurb' },
-};
-
-export const SHAPE_COLORS: Record<GameShape, string> = {
-  shootout: '#34D399',
-  one_sided: '#A3E635',
-  low_scoring: '#94A3B8',
-  defensive: '#FBBF24',
+const SHAPE_KEYS: Record<
+  GameShape,
+  { title: MessageKey; blurb: MessageKey; tone: ShapeTone }
+> = {
+  shootout: { title: 'shape.shootout.title', blurb: 'shape.shootout.blurb', tone: 'great' },
+  one_sided: { title: 'shape.oneSided.title', blurb: 'shape.oneSided.blurb', tone: 'good' },
+  low_scoring: {
+    title: 'shape.lowScoring.title',
+    blurb: 'shape.lowScoring.blurb',
+    tone: 'even',
+  },
+  defensive: { title: 'shape.defensive.title', blurb: 'shape.defensive.blurb', tone: 'weak' },
 };
 
 export function gameShapeCopy(shape: GameShape): ShapeCopy {
   const keys = SHAPE_KEYS[shape];
-  return { title: t(keys.title), blurb: t(keys.blurb), color: SHAPE_COLORS[shape] };
+  return { title: t(keys.title), blurb: t(keys.blurb), tone: keys.tone };
 }
 
 export function describeEdge(label: string | null, value: number | null): string {
@@ -76,6 +78,7 @@ export function formatTendency(value: number, unit: string): string {
 }
 
 export function tendencySourceLabel(
+  theme: Theme,
   source: 'coach' | 'team' | 'league',
   coach: string | null,
 ): { label: string; color: string } {
@@ -83,7 +86,7 @@ export function tendencySourceLabel(
     case 'coach':
       return {
         label: t('tendency.sourceCoach', { coach: coach ?? t('tendency.coachFallback') }),
-        color: theme.production,
+        color: theme.positive,
       };
     case 'team':
       return { label: t('tendency.sourceTeam'), color: theme.warn };

@@ -1,4 +1,3 @@
-
 import { Platform } from 'react-native';
 import { t } from './i18n';
 

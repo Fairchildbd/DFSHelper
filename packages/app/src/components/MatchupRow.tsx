@@ -2,29 +2,28 @@ import { memo } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import type { MatchupSummary } from '../api';
 import { useTranslation } from '../i18n';
-import { describeEdge, edgeColor, formatKickoff, shootoutColor } from '../matchupFormat';
-import { getPixels, theme } from '../theme';
+import { describeEdge, formatKickoff } from '../matchupFormat';
+import { getPixels, radius, scoreColor, useStyles, useTheme, type Theme } from '../theme';
+import { CardWash } from './Card';
+import { Icon, glowStyle } from './Icon';
 
-const TEAMS_LINE = getPixels(22);
+const TEAMS_LINE = getPixels(26);
 const KICKOFF_LINE = getPixels(16);
 const EDGE_LINE = getPixels(17.5);
 const META_LINE = getPixels(16);
-const BAR_HEIGHT = 4;
-const BAR_MARGIN = 3;
-const EDGE_MARGIN = 2;
-const ROW_GAP = 4;
-const ROW_PAD_V = 14;
+const BAR_BLOCK = 3 + 9;
+const CARD_PAD_V = 14;
+const CARD_GAP = 10;
 
 export const MATCHUP_ROW_HEIGHT =
-  ROW_PAD_V * 2 +
+  CARD_PAD_V * 2 +
   TEAMS_LINE +
   KICKOFF_LINE +
-  BAR_HEIGHT +
-  BAR_MARGIN +
+  BAR_BLOCK +
   EDGE_LINE * 2 +
-  EDGE_MARGIN +
   META_LINE +
-  ROW_GAP * 4;
+  4 +
+  CARD_GAP;
 
 export const MatchupRow = memo(function MatchupRow({
   game,
@@ -36,26 +35,29 @@ export const MatchupRow = memo(function MatchupRow({
   onPress: (game: MatchupSummary) => void;
 }) {
   const { t } = useTranslation();
+  const theme = useTheme();
+  const styles = useStyles(sheet);
+
   const edge = game.top_edge_value == null ? null : Number(game.top_edge_value);
   const isFinal = game.home_score != null && game.away_score != null;
   const gap = Number(game.mismatch_score);
-
   const shootout = game.shootout_score == null ? null : Number(game.shootout_score);
   const score = shootout ?? gap;
-  const color = shootoutColor(score);
+  const tint = scoreColor(theme, score);
 
   return (
     <Pressable
-      style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
       onPress={() => onPress(game)}
+      accessibilityRole="button"
+      style={({ pressed }) => [styles.card, pressed && styles.pressed]}
     >
-      <View style={styles.rankCol}>
-        <Text style={styles.rank}>{rank}</Text>
+      <CardWash />
+      <View style={styles.rankBadge}>
+        <Text style={styles.rankText}>{rank}</Text>
       </View>
-
-      <View style={styles.mainCol}>
+      <View style={styles.main}>
         <View style={styles.teamLine}>
-          <Text style={styles.teams}>
+          <Text style={styles.teams} numberOfLines={1}>
             {game.away_team} <Text style={styles.at}>@</Text> {game.home_team}
           </Text>
           {isFinal && (
@@ -64,7 +66,6 @@ export const MatchupRow = memo(function MatchupRow({
             </Text>
           )}
         </View>
-
         <Text style={styles.kickoff} numberOfLines={1}>
           {isFinal ? t('row.final') : formatKickoff(game.gameday, game.gametime)}
           {game.away_coach && game.home_coach
@@ -74,37 +75,36 @@ export const MatchupRow = memo(function MatchupRow({
               })
             : ''}
         </Text>
-
-        <View style={styles.barTrack}>
-          <View style={[styles.barFill, { width: `${score}%`, backgroundColor: color }]} />
+        <View style={styles.track}>
+          <View
+            style={[
+              styles.fill,
+              { width: `${Math.max(0, Math.min(100, score))}%`, backgroundColor: tint },
+            ]}
+          />
         </View>
-
-        <Text style={[styles.edgeLine, { color: edgeColor(edge) }]} numberOfLines={2}>
+        <Text style={styles.edge} numberOfLines={2}>
           {describeEdge(game.top_edge_label, edge)}
         </Text>
-
-        {isFinal ? (
-          <Text style={styles.meta} numberOfLines={1}>
-            {game.top10_hits == null
-              ? t('row.noFantasyLines')
-              : t('row.top10Hits', { hits: game.top10_hits })}
-            {game.backfilled ? t('row.gradedAfterTheFact') : ''}
-          </Text>
-        ) : (
-          <Text style={styles.meta} numberOfLines={1}>
-            {t('row.mismatchSummary', {
-              count: game.edge_count,
-              gap: gap.toFixed(0),
-            })}
-            {game.total_line != null
-              ? t('row.totalLine', { total: Number(game.total_line).toFixed(1) })
-              : t('row.noLineYet')}
-          </Text>
-        )}
+        <Text style={styles.meta} numberOfLines={1}>
+          {isFinal
+            ? `${
+                game.top10_hits == null
+                  ? t('row.noFantasyLines')
+                  : t('row.top10Hits', { hits: game.top10_hits })
+              }${game.backfilled ? t('row.gradedAfterTheFact') : ''}`
+            : `${t('row.mismatchSummary', {
+                count: game.edge_count,
+                gap: gap.toFixed(0),
+              })}${
+                game.total_line != null
+                  ? t('row.totalLine', { total: Number(game.total_line).toFixed(1) })
+                  : t('row.noLineYet')
+              }`}
+        </Text>
       </View>
-
       <View style={styles.scoreCol}>
-        <Text style={[styles.score, { color }]}>{score.toFixed(0)}</Text>
+        <Text style={[styles.score, { color: tint }]}>{score.toFixed(0)}</Text>
         <Text style={styles.scoreCaption}>
           {isFinal
             ? t('row.captionPredicted')
@@ -112,6 +112,9 @@ export const MatchupRow = memo(function MatchupRow({
               ? t('row.captionGap')
               : t('row.captionScoring')}
         </Text>
+        <View style={[styles.flame, glowStyle(theme, 0.5)]}>
+          <Icon name="fire" size={17} color={theme.accent} />
+        </View>
       </View>
     </Pressable>
   );
@@ -122,53 +125,92 @@ function lastName(name: string): string {
   return parts.length > 1 ? parts.slice(1).join(' ') : name;
 }
 
-const styles = StyleSheet.create({
-  row: {
-    height: MATCHUP_ROW_HEIGHT,
-    flexDirection: 'row',
-    paddingVertical: ROW_PAD_V,
-    paddingHorizontal: 16,
-    gap: 12,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: theme.border,
+const sheet = (theme: Theme) => ({
+  card: {
+    height: MATCHUP_ROW_HEIGHT - CARD_GAP,
+    marginHorizontal: 16,
+    marginBottom: CARD_GAP,
+    paddingVertical: CARD_PAD_V,
+    paddingRight: 14,
+    paddingLeft: 12,
+    flexDirection: 'row' as const,
+    gap: 10,
+    backgroundColor: theme.surface,
+    borderRadius: radius.card,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: theme.border,
+    borderLeftWidth: 2,
+    borderLeftColor: theme.accent,
+    overflow: 'hidden' as const,
   },
-  rowPressed: { backgroundColor: theme.surfaceAlt },
-  rankCol: { width: 26, paddingTop: 2 },
-  rank: { color: theme.textFaint, fontSize: getPixels(15), fontWeight: '700' },
-  mainCol: { flex: 1, gap: ROW_GAP },
-  teamLine: { flexDirection: 'row', alignItems: 'baseline', gap: 10 },
+  pressed: { opacity: 0.75 },
+
+  rankBadge: {
+    width: 24,
+    height: 24,
+    borderRadius: 7,
+    backgroundColor: theme.accentSoft,
+    alignItems: 'center' as const,
+    justifyContent: 'center' as const,
+    marginTop: 2,
+  },
+  rankText: { color: theme.accent, fontSize: getPixels(12), fontWeight: '700' as const },
+
+  main: { flex: 1 },
+  teamLine: { flexDirection: 'row' as const, alignItems: 'baseline' as const, gap: 10 },
   teams: {
     color: theme.text,
-    fontSize: getPixels(17),
+    fontSize: getPixels(19),
     lineHeight: TEAMS_LINE,
-    fontWeight: '700',
-    letterSpacing: 0.3,
+    fontWeight: '800' as const,
+    letterSpacing: 0.2,
+    flexShrink: 1,
   },
-  at: { color: theme.textFaint, fontWeight: '500' },
+  at: { color: theme.textFaint, fontWeight: '500' as const },
   finalScore: {
     color: theme.textDim,
     fontSize: getPixels(14),
-    fontWeight: '700',
-    fontVariant: ['tabular-nums'],
+    fontWeight: '700' as const,
+    fontVariant: ['tabular-nums' as const],
   },
-  kickoff: { color: theme.textFaint, fontSize: getPixels(11), lineHeight: KICKOFF_LINE },
-  barTrack: {
-    height: BAR_HEIGHT,
-    borderRadius: 2,
+  kickoff: { color: theme.textDim, fontSize: getPixels(11.5), lineHeight: KICKOFF_LINE },
+
+  track: {
+    height: 3,
+    borderRadius: 1.5,
     backgroundColor: theme.surfaceAlt,
-    overflow: 'hidden',
-    marginTop: BAR_MARGIN,
+    overflow: 'hidden' as const,
+    marginTop: 9,
   },
-  barFill: { height: BAR_HEIGHT, borderRadius: 2 },
-  edgeLine: {
+  fill: { height: 3, borderRadius: 1.5 },
+
+  edge: {
+    color: theme.accent,
     fontSize: getPixels(12.5),
     lineHeight: EDGE_LINE,
     height: EDGE_LINE * 2,
-    fontWeight: '600',
-    marginTop: EDGE_MARGIN,
+    fontWeight: '600' as const,
+    marginTop: 4,
   },
-  meta: { color: theme.textDim, fontSize: getPixels(11), lineHeight: META_LINE },
-  scoreCol: { alignItems: 'flex-end', width: 58 },
-  score: { fontSize: getPixels(24), fontWeight: '800', fontVariant: ['tabular-nums'] },
-  scoreCaption: { color: theme.textFaint, fontSize: getPixels(9), fontWeight: '600' },
+  meta: { color: theme.textDim, fontSize: getPixels(11.5), lineHeight: META_LINE },
+
+  scoreCol: { width: 58, alignItems: 'center' as const },
+  score: {
+    fontSize: getPixels(27),
+    lineHeight: getPixels(31),
+    fontWeight: '800' as const,
+    fontVariant: ['tabular-nums' as const],
+  },
+  scoreCaption: { color: theme.textDim, fontSize: getPixels(10), fontWeight: '500' as const },
+  flame: {
+    marginTop: 10,
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: theme.accentSoft,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: theme.accent,
+    alignItems: 'center' as const,
+    justifyContent: 'center' as const,
+  },
 });

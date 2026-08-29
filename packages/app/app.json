@@ -1,12 +1,12 @@
 {
   "expo": {
-    "name": "app",
+    "name": "DFSmatchup",
     "slug": "app",
     "version": "1.0.0",
     "scheme": "dfshelper",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
-    "userInterfaceStyle": "light",
+    "userInterfaceStyle": "automatic",
     "ios": {
       "bundleIdentifier": "com.benfairchild.dfshelper",
       "supportsTablet": true

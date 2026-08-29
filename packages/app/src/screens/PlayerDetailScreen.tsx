@@ -1,12 +1,5 @@
-import { useEffect, useState, type ReactNode } from 'react';
-import {
-  ActivityIndicator,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  View,
-} from 'react-native';
+import { useEffect, useState } from 'react';
+import { ActivityIndicator, ScrollView, Text, View } from 'react-native';
 import {
   fetchPlayer,
   weightsOf,
@@ -14,9 +7,29 @@ import {
   type PlayerDetail,
   type RankedPlayer,
 } from '../api';
-import { ScoreSplitBar } from '../components/ScoreSplitBar';
+import {
+  AppBar,
+  BottomSpacer,
+  Card,
+  CardWash,
+  IconPuck,
+  InlineNote,
+  RoundButton,
+  ScoreSplitBar,
+  StatRow,
+  glowStyle,
+  type IconName,
+} from '../components/ui';
 import { t as translate, useTranslation, type MessageKey } from '../i18n';
-import { confidenceLabel, getPixels, scoreColor, theme } from '../theme';
+import {
+  confidenceLabel,
+  getPixels,
+  radius,
+  scoreColor,
+  useStyles,
+  useTheme,
+  type Theme,
+} from '../theme';
 
 const DRILL_UNIT_KEYS: Record<string, MessageKey> = {
   forty: 'drill.unit.seconds',
@@ -48,6 +61,8 @@ export function PlayerDetailScreen({
   backLabel?: string;
 }) {
   const { t } = useTranslation();
+  const theme = useTheme();
+  const styles = useStyles(sheet);
   const [detail, setDetail] = useState<PlayerDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -63,63 +78,67 @@ export function PlayerDetailScreen({
     };
   }, [player.gsis_id]);
 
+  const composite = view.composite == null ? null : Number(view.composite);
+
   return (
     <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
-      <Pressable onPress={onBack} style={styles.back} hitSlop={12}>
-        <Text style={styles.backText}>‹ {backLabel}</Text>
-      </Pressable>
-
-      <Text style={styles.name}>{view.display_name}</Text>
-      <Text style={styles.meta}>
-        {[
-          view.position,
-          view.team ?? t('player.freeAgentLong'),
-          view.age != null ? t('player.ageYears', { age: Number(view.age).toFixed(1) }) : null,
-          view.years_experience != null
-            ? t('player.seasons', { count: view.years_experience })
-            : null,
-        ]
-          .filter(Boolean)
-          .join(t('player.metaSeparator'))}
-      </Text>
-
-      <View style={styles.scoreCard}>
-        <View style={styles.scoreMain}>
-          <Text
-            style={[
-              styles.composite,
-              { color: scoreColor(view.composite == null ? null : Number(view.composite)) },
-            ]}
-          >
-            {view.composite == null ? NO_VALUE : Number(view.composite).toFixed(1)}
-          </Text>
+      <AppBar
+        onBack={onBack}
+        backLabel={backLabel}
+        right={<RoundButton name="star-outline" />}
+      />
+      <View style={styles.identity}>
+        <Text style={styles.name} numberOfLines={2}>
+          {view.display_name}
+        </Text>
+        <Text style={styles.meta}>
+          {[
+            view.position,
+            view.team ?? t('player.freeAgentLong'),
+            view.age != null ? t('player.ageYears', { age: Number(view.age).toFixed(1) }) : null,
+            view.years_experience != null
+              ? t('player.seasons', { count: view.years_experience })
+              : null,
+          ]
+            .filter(Boolean)
+            .join(t('player.metaSeparator'))}
+        </Text>
+      </View>
+      <Card outlined style={styles.hero}>
+        <CardWash />
+        <View style={styles.heroMain}>
+          <View style={styles.compositeWrap}>
+            <View style={[styles.halo, glowStyle(theme, 1.6)]} pointerEvents="none" />
+            <Text style={[styles.composite, { color: scoreColor(theme, composite) }]}>
+              {composite == null ? NO_VALUE : composite.toFixed(1)}
+            </Text>
+          </View>
           <Text style={styles.compositeLabel}>{t('player.composite')}</Text>
         </View>
-        <View style={styles.scoreRanks}>
+        <View style={styles.heroRanks}>
           <Rank
             label={t('player.positionRank', { position: view.position })}
             value={view.position_rank}
           />
           <Rank label={t('player.overallRank')} value={view.overall_rank} />
         </View>
-      </View>
-
-      <ScoreSplitBar weights={weightsOf(view)} />
-
+      </Card>
+      <ScoreSplitBar weights={weightsOf(view)} inline />
       {error && <Text style={styles.error}>{error}</Text>}
       {!detail && !error && <ActivityIndicator style={styles.loader} color={theme.accent} />}
 
       {detail && (
         <>
           {detail.detail.noRecentProduction && (
-            <Note tone="warn">{t('player.noRecentProduction')}</Note>
+            <InlineNote icon="alert-circle-outline">{t('player.noRecentProduction')}</InlineNote>
           )}
 
           {detail.detail.lowSignalMeasurables && (
-            <Note>{t('player.lowSignalMeasurables')}</Note>
+            <InlineNote>{t('player.lowSignalMeasurables')}</InlineNote>
           )}
 
-          <Component
+          <ComponentCard
+            icon="run-fast"
             title={t('player.athleticTitle')}
             subtitle={t('player.athleticSubtitle')}
             score={detail.detail.athletic.score}
@@ -129,9 +148,9 @@ export function PlayerDetailScreen({
             units={drillUnits()}
             color={theme.athletic}
           />
-
           {detail.detail.college.score != null && (
-            <Component
+            <ComponentCard
+              icon="school-outline"
               title={t('player.collegeTitle')}
               subtitle={t('player.collegeSubtitle')}
               score={detail.detail.college.score}
@@ -144,10 +163,11 @@ export function PlayerDetailScreen({
           )}
 
           {detail.detail.lowSignalProduction && (
-            <Note>{t('player.lowSignalProduction')}</Note>
+            <InlineNote>{t('player.lowSignalProduction')}</InlineNote>
           )}
 
-          <Component
+          <ComponentCard
+            icon="chart-bar"
             title={t('player.productionTitle')}
             subtitle={t('player.productionSubtitle')}
             score={detail.detail.production.score}
@@ -157,39 +177,62 @@ export function PlayerDetailScreen({
             units={{}}
             color={theme.production}
           />
-
           {detail.measurables.length > 0 && (
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>{t('player.rawWorkout')}</Text>
-              {detail.measurables.map((m, i) => (
-                <View key={i} style={styles.rawRow}>
-                  <Text style={styles.rawSource}>
-                    {m.source} {m.season ?? ''}{' '}
-                    {m.school ? t('player.rawSchool', { school: m.school }) : ''}
-                  </Text>
-                  <Text style={styles.rawValues}>
-                    {[
-                      m.forty && t('drill.forty', { value: m.forty }),
-                      m.bench != null && t('drill.bench', { value: m.bench }),
-                      m.vertical && t('drill.vertical', { value: m.vertical }),
-                      m.broad != null && t('drill.broad', { value: m.broad }),
-                      m.cone && t('drill.cone', { value: m.cone }),
-                      m.shuttle && t('drill.shuttle', { value: m.shuttle }),
-                    ]
-                      .filter(Boolean)
-                      .join('   ') || t('player.noDrills')}
-                  </Text>
+            <Card wash rail style={styles.card}>
+              <View style={styles.cardHead}>
+                <IconPuck name="dumbbell" />
+                <View style={styles.cardHeadText}>
+                  <Text style={styles.cardTitle}>{t('player.rawWorkout')}</Text>
+                  {detail.measurables[0] && (
+                    <Text style={styles.cardSub} numberOfLines={1}>
+                      {[
+                        `${detail.measurables[0].source} ${detail.measurables[0].season ?? ''}`.trim(),
+                        detail.measurables[0].school,
+                      ]
+                        .filter(Boolean)
+                        .join(t('player.metaSeparator'))}
+                    </Text>
+                  )}
                 </View>
-              ))}
-            </View>
+              </View>
+              {detail.measurables.map((m, i) => {
+                const inches = t('drill.unit.inches');
+                const drills = [
+                  m.forty && { drill: 'forty', value: `${m.forty}` },
+                  m.bench != null && { drill: 'bench', value: `${m.bench}` },
+                  m.vertical && { drill: 'vertical', value: `${m.vertical}${inches}` },
+                  m.broad != null && { drill: 'broad', value: `${m.broad}${inches}` },
+                  m.cone && { drill: 'cone', value: `${m.cone}` },
+                  m.shuttle && { drill: 'shuttle', value: `${m.shuttle}` },
+                ].filter(Boolean) as Array<{ drill: string; value: string }>;
+
+                return (
+                  <View key={i} style={styles.drillGrid}>
+                    {drills.length === 0 ? (
+                      <Text style={styles.drillEmpty}>{t('player.noDrills')}</Text>
+                    ) : (
+                      drills.map(({ drill, value }) => (
+                        <View key={drill} style={styles.drill}>
+                          <Text style={styles.drillLabel}>{drillLabel(drill)}:</Text>
+                          <Text style={styles.drillValue}>{value}</Text>
+                        </View>
+                      ))
+                    )}
+                  </View>
+                );
+              })}
+            </Card>
           )}
         </>
       )}
+
+      <BottomSpacer extra={12} />
     </ScrollView>
   );
 }
 
-function Component({
+function ComponentCard({
+  icon,
   title,
   subtitle,
   score,
@@ -199,6 +242,7 @@ function Component({
   units,
   color,
 }: {
+  icon: IconName;
   title: string;
   subtitle: string;
   score: number | null;
@@ -209,23 +253,25 @@ function Component({
   color: string;
 }) {
   const { t } = useTranslation();
-  const conf = confidenceLabel(confidence);
+  const theme = useTheme();
+  const styles = useStyles(sheet);
+  const conf = confidenceLabel(theme, confidence);
 
   return (
-    <View style={styles.section}>
-      <View style={styles.sectionHead}>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.sectionTitle}>{title}</Text>
-          <Text style={styles.sectionSub}>{subtitle}</Text>
+    <Card wash rail style={styles.card}>
+      <View style={styles.cardHead}>
+        <IconPuck name={icon} />
+        <View style={styles.cardHeadText}>
+          <Text style={styles.cardTitle}>{title}</Text>
+          <Text style={styles.cardSub}>{subtitle}</Text>
         </View>
-        <Text style={[styles.sectionScore, { color: scoreColor(score) }]}>
+        <Text style={[styles.cardScore, { color: scoreColor(theme, score) }]}>
           {score == null ? NO_VALUE : score.toFixed(0)}
         </Text>
       </View>
-
       <View style={styles.confRow}>
         <View style={[styles.dot, { backgroundColor: conf.color }]} />
-        <Text style={styles.confText}>
+        <Text style={styles.confText} numberOfLines={1}>
           {t('player.confidenceLine', {
             label: conf.label,
             recorded: Math.round(confidence * 100),
@@ -233,65 +279,37 @@ function Component({
           })}
         </Text>
       </View>
-
       {confidence < 1 && confidence > 0 && (
         <Text style={styles.shrinkNote}>
           {t('player.shrinkNote', { unmeasured: Math.round((1 - confidence) * 100) })}
         </Text>
       )}
 
-      {metrics.map((m) => (
-        <MetricBar key={m.metric} metric={m} unit={units[m.metric] ?? ''} color={color} />
-      ))}
-    </View>
-  );
-}
-
-function MetricBar({
-  metric,
-  unit,
-  color,
-}: {
-  metric: MetricDetail;
-  unit: string;
-  color: string;
-}) {
-  const { t } = useTranslation();
-  const measured = metric.percentile != null;
-  return (
-    <View style={styles.metric}>
-      <View style={styles.metricHead}>
-        <Text style={[styles.metricLabel, !measured && styles.metricLabelDim]}>
-          {metric.label}
-        </Text>
-        <Text style={styles.metricWeight}>
-          {t('player.metricWeight', { weight: Math.round(metric.weight * 100) })}
-        </Text>
-        <Text style={[styles.metricRaw, !measured && styles.metricLabelDim]}>
-          {measured
-            ? t('player.metricRaw', {
-                value: formatRaw(metric.raw, metric.metric),
-                unit,
-              })
-            : t('player.notRecorded')}
-        </Text>
-      </View>
-      <View style={styles.metricTrack}>
-        {metric.percentile != null && (
-          <View
-            style={[
-              styles.metricFill,
-              { width: `${metric.percentile}%` as const, backgroundColor: color },
-            ]}
+      <View style={styles.metrics}>
+        {metrics.map((m) => (
+          <StatRow
+            key={m.metric}
+            label={m.label}
+            weight={t('player.metricWeight', { weight: Math.round(m.weight * 100) })}
+            value={
+              m.percentile != null
+                ? t('player.metricRaw', {
+                    value: formatRaw(m.raw, m.metric),
+                    unit: units[m.metric] ?? '',
+                  })
+                : t('player.notRecorded')
+            }
+            percent={m.percentile}
+            note={
+              m.percentile != null
+                ? t('player.percentile', { percentile: m.percentile.toFixed(0) })
+                : NO_VALUE
+            }
+            color={color}
           />
-        )}
+        ))}
       </View>
-      <Text style={styles.metricPct}>
-        {metric.percentile != null
-          ? t('player.percentile', { percentile: metric.percentile.toFixed(0) })
-          : NO_VALUE}
-      </Text>
-    </View>
+    </Card>
   );
 }
 
@@ -302,6 +320,10 @@ const PROPORTION_METRICS = new Set([
   'snap_pct',
   'cfb_completion_pct',
 ]);
+
+function drillLabel(drill: string): string {
+  return translate(`drill.label.${drill}` as MessageKey);
+}
 
 function formatRaw(raw: number | null, metric: string): string {
   if (raw == null) return NO_VALUE;
@@ -315,7 +337,7 @@ function formatRaw(raw: number | null, metric: string): string {
 
 function Rank({ label, value }: { label: string; value: number | null | undefined }) {
   const { t } = useTranslation();
-
+  const styles = useStyles(sheet);
   return (
     <View style={styles.rank}>
       <Text style={styles.rankValue}>
@@ -326,84 +348,101 @@ function Rank({ label, value }: { label: string; value: number | null | undefine
   );
 }
 
-function Note({ children, tone = 'info' }: { children: ReactNode; tone?: 'info' | 'warn' }) {
-  return (
-    <View style={[styles.note, tone === 'warn' && styles.noteWarn]}>
-      <Text style={styles.noteText}>{children}</Text>
-    </View>
-  );
-}
-
-const styles = StyleSheet.create({
+const sheet = (theme: Theme) => ({
   screen: { flex: 1, backgroundColor: theme.bg },
-  content: { padding: 16, paddingBottom: 48, gap: 12 },
-  back: { paddingVertical: 4 },
-  backText: { color: theme.accent, fontSize: getPixels(16), fontWeight: '600' },
-  name: { color: theme.text, fontSize: getPixels(28), fontWeight: '800', letterSpacing: -0.5 },
-  meta: { color: theme.textDim, fontSize: getPixels(13), marginTop: -6 },
-  scoreCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: theme.surface,
-    borderRadius: 14,
-    padding: 18,
-    borderWidth: 1,
-    borderColor: theme.border,
+  content: { paddingHorizontal: 16, paddingBottom: 8, gap: 12 },
+
+  identity: { paddingTop: 2, gap: 3 },
+  name: {
+    color: theme.text,
+    fontSize: getPixels(34),
+    lineHeight: getPixels(39),
+    fontWeight: '800' as const,
+    letterSpacing: -1,
   },
-  scoreMain: { flex: 1 },
-  composite: { fontSize: getPixels(46), fontWeight: '800', fontVariant: ['tabular-nums'] },
-  compositeLabel: { color: theme.textDim, fontSize: getPixels(12), fontWeight: '600' },
-  scoreRanks: { gap: 12 },
-  rank: { alignItems: 'flex-end' },
-  rankValue: { color: theme.text, fontSize: getPixels(18), fontWeight: '700' },
-  rankLabel: { color: theme.textFaint, fontSize: getPixels(11) },
-  section: {
-    backgroundColor: theme.surface,
-    borderRadius: 14,
-    padding: 16,
-    gap: 10,
-    borderWidth: 1,
-    borderColor: theme.border,
+  meta: { color: theme.textDim, fontSize: getPixels(13.5) },
+
+  hero: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    paddingVertical: 22,
+    paddingHorizontal: 18,
+    borderRadius: radius.cardLarge,
+    gap: 12,
   },
-  sectionHead: { flexDirection: 'row', alignItems: 'center' },
-  sectionTitle: { color: theme.text, fontSize: getPixels(17), fontWeight: '700' },
-  sectionSub: { color: theme.textFaint, fontSize: getPixels(12) },
-  sectionScore: { fontSize: getPixels(28), fontWeight: '800', fontVariant: ['tabular-nums'] },
-  confRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  dot: { width: 7, height: 7, borderRadius: 4 },
-  confText: { color: theme.textDim, fontSize: getPixels(12) },
-  shrinkNote: {
-    color: theme.warn,
-    fontSize: getPixels(12),
-    lineHeight: getPixels(17),
-    backgroundColor: 'rgba(251,191,36,0.08)',
-    padding: 10,
-    borderRadius: 8,
+  compositeWrap: { alignItems: 'center' as const, justifyContent: 'center' as const },
+  halo: {
+    position: 'absolute' as const,
+    left: -20,
+    right: -20,
+    top: 6,
+    bottom: 6,
+    borderRadius: 999,
+    backgroundColor: theme.accentSoft,
   },
-  metric: { gap: 3, marginTop: 4 },
-  metricHead: { flexDirection: 'row', alignItems: 'baseline', gap: 8 },
-  metricLabel: { color: theme.text, fontSize: getPixels(13), fontWeight: '600', flex: 1 },
-  metricLabelDim: { color: theme.textFaint, fontWeight: '400' },
-  metricWeight: { color: theme.textFaint, fontSize: getPixels(11) },
-  metricRaw: { color: theme.textDim, fontSize: getPixels(12), width: 78, textAlign: 'right' },
-  metricTrack: { height: 5, borderRadius: 3, backgroundColor: theme.surfaceAlt, overflow: 'hidden' },
-  metricFill: { height: '100%', borderRadius: 3 },
-  metricPct: { color: theme.textFaint, fontSize: getPixels(11) },
-  note: {
-    backgroundColor: 'rgba(77,163,255,0.08)',
-    borderLeftWidth: 3,
-    borderLeftColor: theme.accent,
-    padding: 12,
-    borderRadius: 8,
+  heroMain: { flex: 1, alignItems: 'center' as const },
+  composite: {
+    fontSize: getPixels(52),
+    lineHeight: getPixels(58),
+    fontWeight: '800' as const,
+    fontVariant: ['tabular-nums' as const],
+    letterSpacing: -1.5,
   },
-  noteWarn: {
-    backgroundColor: 'rgba(251,191,36,0.08)',
-    borderLeftColor: theme.warn,
+  compositeLabel: {
+    color: theme.accent,
+    fontSize: getPixels(12.5),
+    fontWeight: '700' as const,
+    marginTop: 2,
   },
-  noteText: { color: theme.textDim, fontSize: getPixels(12.5), lineHeight: getPixels(18) },
-  rawRow: { gap: 2 },
-  rawSource: { color: theme.textFaint, fontSize: getPixels(11), textTransform: 'capitalize' },
-  rawValues: { color: theme.text, fontSize: getPixels(13), fontVariant: ['tabular-nums'] },
-  loader: { paddingVertical: 32 },
-  error: { color: theme.danger, fontSize: getPixels(13) },
+  heroRanks: { gap: 14, alignItems: 'flex-end' as const, minWidth: 74 },
+  rank: { alignItems: 'flex-end' as const },
+  rankValue: {
+    color: theme.text,
+    fontSize: getPixels(19),
+    fontWeight: '800' as const,
+    fontVariant: ['tabular-nums' as const],
+  },
+  rankLabel: { color: theme.textDim, fontSize: getPixels(11) },
+
+  card: { padding: 14, gap: 8 },
+  cardHead: { flexDirection: 'row' as const, alignItems: 'center' as const, gap: 11 },
+  cardHeadText: { flex: 1 },
+  cardTitle: {
+    color: theme.text,
+    fontSize: getPixels(17),
+    fontWeight: '800' as const,
+    letterSpacing: -0.3,
+  },
+  cardSub: { color: theme.textDim, fontSize: getPixels(11.5), marginTop: 1 },
+  cardScore: {
+    fontSize: getPixels(26),
+    fontWeight: '800' as const,
+    fontVariant: ['tabular-nums' as const],
+  },
+
+  confRow: { flexDirection: 'row' as const, alignItems: 'center' as const, gap: 6 },
+  dot: { width: 6, height: 6, borderRadius: 3 },
+  confText: { color: theme.textDim, fontSize: getPixels(11), flex: 1 },
+  shrinkNote: { color: theme.textFaint, fontSize: getPixels(10.5), lineHeight: getPixels(15) },
+  metrics: { marginTop: 2 },
+
+  drillGrid: {
+    flexDirection: 'row' as const,
+    flexWrap: 'wrap' as const,
+    rowGap: 6,
+    columnGap: 16,
+    marginTop: 2,
+  },
+  drill: { flexDirection: 'row' as const, gap: 5 },
+  drillLabel: { color: theme.textDim, fontSize: getPixels(13) },
+  drillValue: {
+    color: theme.text,
+    fontSize: getPixels(13),
+    fontWeight: '700' as const,
+    fontVariant: ['tabular-nums' as const],
+  },
+  drillEmpty: { color: theme.textFaint, fontSize: getPixels(12.5) },
+
+  error: { color: theme.danger, fontSize: getPixels(13), lineHeight: getPixels(19) },
+  loader: { paddingVertical: 24 },
 });
