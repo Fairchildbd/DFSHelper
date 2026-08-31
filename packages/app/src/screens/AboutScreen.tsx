@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { ScrollView } from 'react-native';
 import { API_URL, fetchMatchupMeta, type MatchupMeta } from '../api';
+import { useAuth } from '../auth';
 import {
   AppBar,
   BottomSpacer,
@@ -413,8 +414,57 @@ export function AboutScreen() {
         <Bullet>{t('about.caveats.coachKeyed')}</Bullet>
         <Bullet>{t('about.caveats.frozen')}</Bullet>
       </Section>
+
+      <Account />
       <BottomSpacer extra={12} />
     </ScrollView>
+  );
+}
+
+function Account() {
+  const { t } = useTranslation();
+  const theme = useTheme();
+  const styles = useStyles(sheet);
+  const { user, status, signOut } = useAuth();
+  const [pending, setPending] = useState(false);
+  const guest = status === 'guest';
+
+  async function submit() {
+    if (pending) return;
+    setPending(true);
+    // No catch: signOut clears the local session even when the server cannot
+    // be reached, so there is no failure state left for this screen to show.
+    // For a guest it is the way back to the front door and cannot fail at all.
+    await signOut();
+  }
+
+  return (
+    <Section
+      icon="account-circle-outline"
+      title={t('about.account.title')}
+      hint={
+        guest
+          ? t('about.account.guest')
+          : t('about.account.signedInAs', { email: user?.email ?? '' })
+      }
+    >
+      <Pressable
+        onPress={submit}
+        disabled={pending}
+        accessibilityRole="button"
+        accessibilityState={{ disabled: pending, busy: pending }}
+        style={({ pressed }) => [
+          styles.signOut,
+          guest && styles.signInAction,
+          pressed && styles.signOutPressed,
+        ]}
+      >
+        <Icon name={guest ? 'login' : 'logout'} size={18} color={guest ? theme.accent : theme.danger} />
+        <Text style={guest ? styles.signInText : styles.signOutText}>
+          {guest ? t('about.account.signIn') : t('about.account.signOut')}
+        </Text>
+      </Pressable>
+    </Section>
   );
 }
 
@@ -732,6 +782,30 @@ const sheet = (theme: Theme) => ({
   workedLine: { color: theme.text, fontSize: getPixels(12.5), lineHeight: getPixels(18) },
   workedNum: { color: theme.text, fontWeight: '800' as const },
   workedTotal: { fontSize: getPixels(20), fontWeight: '800' as const },
+
+  signOut: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    justifyContent: 'center' as const,
+    gap: 9,
+    marginTop: 12,
+    paddingVertical: 12,
+    borderRadius: radius.card,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: theme.danger,
+  },
+  signOutPressed: { opacity: 0.75 },
+  signOutText: {
+    color: theme.danger,
+    fontSize: getPixels(14),
+    fontWeight: '800' as const,
+  },
+  signInAction: { borderColor: theme.accent },
+  signInText: {
+    color: theme.accent,
+    fontSize: getPixels(14),
+    fontWeight: '800' as const,
+  },
 
   bullet: { flexDirection: 'row' as const, gap: 6, paddingVertical: 4 },
   bulletDot: { marginTop: 1 },

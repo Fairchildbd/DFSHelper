@@ -36,7 +36,7 @@ export function ThisWeekScreen({
   onBuildLineup,
 }: {
   onSelectGame: (game: MatchupSummary) => void;
-  onBuildLineup: (slate: SlateSummary, strategy: StrategyDefinition) => void;
+  onBuildLineup?: (slate: SlateSummary, strategy: StrategyDefinition) => void;
 }) {
   const { t } = useTranslation();
   const theme = useTheme();
@@ -52,6 +52,8 @@ export function ThisWeekScreen({
   const [shapeOrder, setShapeOrder] = useState<GameShape[]>([]);
   const [filter, setFilter] = useState<Filter>('all');
 
+  const canBuild = onBuildLineup != null;
+
   const load = useCallback(async () => {
     try {
       const res = await fetchThisWeek();
@@ -59,12 +61,14 @@ export function ThisWeekScreen({
       setCurrent(res.current);
       setPrevious(res.previous);
       setError(null);
-      try {
-        const slateRes = await fetchSlates();
-        setSlates(slateRes.slates);
-        setStrategies(slateRes.strategies);
-      } catch {
-        setSlates([]);
+      if (canBuild) {
+        try {
+          const slateRes = await fetchSlates();
+          setSlates(slateRes.slates);
+          setStrategies(slateRes.strategies);
+        } catch {
+          setSlates([]);
+        }
       }
     } catch (err) {
       setError((err as Error).message);
@@ -72,7 +76,7 @@ export function ThisWeekScreen({
       setLoading(false);
       setRefreshing(false);
     }
-  }, []);
+  }, [canBuild]);
 
   useEffect(() => {
     load();
@@ -183,7 +187,9 @@ export function ThisWeekScreen({
         </View>
       )}
 
-      <LineupBar slates={slates} strategies={strategies} onBuild={onBuildLineup} />
+      {onBuildLineup && (
+        <LineupBar slates={slates} strategies={strategies} onBuild={onBuildLineup} />
+      )}
       {shown.map((section) => (
         <View key={section.key}>
           <View style={styles.sectionHead}>

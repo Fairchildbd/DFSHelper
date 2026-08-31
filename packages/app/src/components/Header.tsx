@@ -4,11 +4,13 @@ import { getPixels, useStyles, useTheme, type Theme } from '../theme';
 import { Icon, glowStyle, type IconName } from './Icon';
 
 export function Wordmark({ style }: { style?: StyleProp<ViewStyle> }) {
+  const { t } = useTranslation();
   const styles = useStyles(sheet);
   return (
     <View style={style}>
       <Text style={styles.wordmark} accessibilityRole="header">
-        DFS<Text style={styles.wordmarkAccent}>matchup</Text>
+        {t('app.wordmark.lead')}{' '}
+        <Text style={styles.wordmarkAccent}>{t('app.wordmark.accent')}</Text>
       </Text>
     </View>
   );

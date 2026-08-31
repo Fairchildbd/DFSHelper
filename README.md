@@ -1,4 +1,4 @@
-# DFSHelper
+# DFS Matchup
 
 A daily-fantasy football tool built around a three-part player ranking: what a
 player's measurables predicted, what he did in college, and what he has done in

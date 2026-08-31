@@ -1,14 +1,14 @@
 {
   "expo": {
-    "name": "DFSmatchup",
-    "slug": "app",
+    "name": "DFS Matchup",
+    "slug": "dfsmatchup-app",
     "version": "1.0.0",
-    "scheme": "dfshelper",
+    "scheme": "dfsmatchup",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
     "ios": {
-      "bundleIdentifier": "com.benfairchild.dfshelper",
+      "bundleIdentifier": "com.benfairchild.dfsmatchup",
       "supportsTablet": true
     },
     "android": {
@@ -23,8 +23,14 @@
     "web": {
       "favicon": "./assets/favicon.png"
     },
+    "extra": {
+      "eas": {
+        "projectId": "1850f07e-7ddb-4f86-b5fb-582bffca35a8"
+      }
+    },
     "plugins": [
-      "expo-localization"
+      "expo-localization",
+      "expo-secure-store"
     ]
   }
 }
