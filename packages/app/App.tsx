@@ -19,8 +19,11 @@ import {
   type IconName,
   type TabItem,
 } from './src/components/ui';
+import { AuthProvider, useAuth } from './src/auth';
 import { useTranslation, type MessageKey } from './src/i18n';
 import type { PlayerRef } from './src/screens/PlayerDetailScreen';
+import { CreateAccountScreen } from './src/screens/CreateAccountScreen';
+import { LoginScreen } from './src/screens/LoginScreen';
 import { ThisWeekScreen } from './src/screens/ThisWeekScreen';
 import { useStyles, useTheme, type Theme } from './src/theme';
 
@@ -55,7 +58,9 @@ const TABS: ReadonlyArray<{ key: Tab; label: MessageKey; icon: IconName }> = [
 export default function App() {
   return (
     <SafeAreaProvider>
-      <Shell />
+      <AuthProvider>
+        <Shell />
+      </AuthProvider>
     </SafeAreaProvider>
   );
 }
@@ -70,6 +75,11 @@ function Shell() {
     () => TABS.map((item) => ({ key: item.key, label: t(item.label), icon: item.icon })),
     [t],
   );
+
+  const { status } = useAuth();
+  const signedIn = status === 'signedIn';
+  const [authScreen, setAuthScreen] = useState<'signIn' | 'createAccount'>('signIn');
+  const openCreateAccount = useCallback(() => setAuthScreen('createAccount'), []);
 
   const [tab, setTab] = useState<Tab>('week');
   const [game, setGame] = useState<MatchupSummary | null>(null);
@@ -102,6 +112,27 @@ function Shell() {
   const closePlayer = useCallback(() => setPlayer(null), []);
   const closeBuild = useCallback(() => setBuild(null), []);
 
+  if (status === 'restoring' || status === 'signedOut') {
+    return (
+      <View style={styles.root}>
+        <StatusBar barStyle={theme.mode === 'light' ? 'dark-content' : 'light-content'} />
+        <SafeAreaView style={styles.body} edges={['top', 'left', 'right']}>
+          {status === 'restoring' ? (
+            <ActivityIndicator
+              style={styles.loader}
+              color={theme.accent}
+              accessibilityLabel={t('auth.restoring')}
+            />
+          ) : authScreen === 'createAccount' ? (
+            <CreateAccountScreen />
+          ) : (
+            <LoginScreen onCreateAccount={openCreateAccount} />
+          )}
+        </SafeAreaView>
+      </View>
+    );
+  }
+
   let body: React.ReactNode;
   if (build) {
     body = (
@@ -127,11 +158,13 @@ function Shell() {
         game={game}
         onBack={closeGame}
         onSelectPlayer={openFromMatchup}
-        onBuildShowdown={openBuild}
+        onBuildShowdown={signedIn ? openBuild : undefined}
       />
     );
   } else if (tab === 'week') {
-    body = <ThisWeekScreen onSelectGame={openGame} onBuildLineup={openBuild} />;
+    body = (
+      <ThisWeekScreen onSelectGame={openGame} onBuildLineup={signedIn ? openBuild : undefined} />
+    );
   } else if (tab === 'bestball') {
     body = <BestBallScreen onSelectGame={openGame} />;
   } else if (tab === 'about') {

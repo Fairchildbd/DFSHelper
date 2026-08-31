@@ -33,3 +33,17 @@ export const COLLEGE_SEASON_START = Number(process.env.COLLEGE_SEASON_START ?? 2
 export const ACTIVE_SINCE_SEASON = Number(process.env.ACTIVE_SINCE_SEASON ?? 2025);
 
 export const TENDENCY_WINDOW_SEASONS = Number(process.env.TENDENCY_WINDOW_SEASONS ?? 3);
+
+export const SESSION_TTL_DAYS = Number(process.env.SESSION_TTL_DAYS ?? 30);
+
+// Off until web checkout exists. With it off, `requireEntitlement` is a no-op
+// and every signed-in user can build lineups; turning it on is the only change
+// needed to make the paid tier live.
+export const PAYWALL_ENABLED = process.env.PAYWALL_ENABLED === 'true';
+
+// Whether the app may show a link to the external purchase page. Server-driven
+// so a storefront policy change is a config edit, not an app release.
+export const SHOW_EXTERNAL_PURCHASE_LINK =
+  process.env.SHOW_EXTERNAL_PURCHASE_LINK === 'true';
+
+export const PURCHASE_URL = process.env.PURCHASE_URL ?? '';

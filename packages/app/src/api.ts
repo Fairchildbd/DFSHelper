@@ -91,18 +91,111 @@ export interface PlayerDetail extends RankedPlayer {
   }>;
 }
 
-async function get<T>(path: string): Promise<T> {
-  const res = await fetch(`${API_URL}${path}`);
+export class ApiError extends Error {
+  readonly status: number;
+
+  constructor(status: number, message: string) {
+    super(message);
+    this.name = 'ApiError';
+    this.status = status;
+  }
+}
+
+let authToken: string | null = null;
+let onUnauthorized: (() => void) | null = null;
+
+export function setAuthToken(token: string | null): void {
+  authToken = token;
+}
+
+// The session context registers this so an expired or revoked token drops the
+// app back to the login screen from wherever the 401 happened, rather than
+// leaving a screen stuck on an error it cannot recover from.
+export function setUnauthorizedHandler(handler: (() => void) | null): void {
+  onUnauthorized = handler;
+}
+
+async function failure(res: Response, path: string): Promise<ApiError> {
+  const fallback = t('api.requestFailed', {
+    status: res.status,
+    statusText: res.statusText,
+    url: `${API_URL}${path}`,
+  });
+
+  try {
+    const body: unknown = await res.json();
+    const message =
+      typeof body === 'object' && body !== null && 'error' in body
+        ? (body as { error: unknown }).error
+        : null;
+    return new ApiError(res.status, typeof message === 'string' ? message : fallback);
+  } catch {
+    return new ApiError(res.status, fallback);
+  }
+}
+
+async function request<T>(path: string, body?: unknown): Promise<T> {
+  const headers = new Headers();
+  if (authToken) headers.set('Authorization', `Bearer ${authToken}`);
+  if (body !== undefined) headers.set('Content-Type', 'application/json');
+
+  const res = await fetch(`${API_URL}${path}`, {
+    method: body === undefined ? 'GET' : 'POST',
+    headers,
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+
   if (!res.ok) {
-    throw new Error(
-      t('api.requestFailed', {
-        status: res.status,
-        statusText: res.statusText,
-        url: `${API_URL}${path}`,
-      }),
-    );
+    const error = await failure(res, path);
+    if (res.status === 401) onUnauthorized?.();
+    throw error;
   }
   return (await res.json()) as T;
+}
+
+function get<T>(path: string): Promise<T> {
+  return request<T>(path);
+}
+
+export interface AuthUser {
+  id: string;
+  email: string;
+  entitled: boolean;
+}
+
+export interface Session {
+  token: string;
+  expiresAt: string;
+  user: AuthUser;
+}
+
+export interface Me {
+  user: AuthUser;
+  purchase: { showExternalLink: boolean; url: string | null };
+}
+
+// A 4xx is the server naming something the person can act on: the address is
+// taken, the password is too short, the credentials are wrong. Anything else is
+// ours — a driver message, a crash, an unreachable host — and showing its text
+// tells them nothing they can use.
+export function authErrorMessage(err: unknown): string {
+  return err instanceof ApiError && err.status < 500 ? err.message : t('auth.error.generic');
+}
+
+export function register(credentials: { email: string; password: string }): Promise<Session> {
+  return request<Session>('/auth/register', credentials);
+}
+
+export function login(credentials: { email: string; password: string }): Promise<Session> {
+  return request<Session>('/auth/login', credentials);
+}
+
+export function logout(): Promise<{ ok: boolean }> {
+  return request<{ ok: boolean }>('/auth/logout', {});
+}
+
+export function fetchMe(): Promise<Me> {
+  return get<Me>('/auth/me');
 }
 
 export function fetchRankings(params: {

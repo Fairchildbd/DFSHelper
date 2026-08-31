@@ -1,4 +1,4 @@
--- DFSHelper schema.
+-- DFS Matchup schema.
 --
 -- unaccent is needed to match college and NFL player names, which arrive from
 -- different feeds with inconsistent diacritics.
@@ -567,4 +567,65 @@ CREATE TABLE IF NOT EXISTS player_dvoa (
   rec_defense_faced           NUMERIC,
   seasons                     TEXT,
   computed_at                 TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- Accounts, sessions, and entitlements.
+--
+-- Kept deliberately separate from the ranking tables: everything above is
+-- derived data that a re-ingest can rebuild from scratch, and none of this is.
+-- A `db:prune` or a full reload must never touch these three.
+
+-- A surrogate id rather than email as the primary key, so a future email change
+-- is an UPDATE on one column instead of a cascade across every referencing row.
+--
+-- Email is stored already-lowercased and trimmed by the application, which is
+-- what makes the plain UNIQUE constraint case-insensitive on the login path.
+-- A functional UNIQUE index on lower(email) would work too, but then every
+-- lookup has to remember to wrap the column and lose the index if it forgets.
+CREATE TABLE IF NOT EXISTS users (
+  id            BIGSERIAL PRIMARY KEY,
+  email         TEXT NOT NULL UNIQUE,
+  password_hash TEXT NOT NULL,
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+  last_login_at TIMESTAMPTZ
+);
+
+-- Opaque bearer tokens, stored as a SHA-256 hash and never in the clear. The
+-- raw token exists only in the response that created it and on the device that
+-- holds it, so a dump of this table cannot be replayed against the API.
+--
+-- The hash is the primary key because it is also the only lookup: every
+-- authenticated request arrives with a token and nothing else to key on.
+CREATE TABLE IF NOT EXISTS sessions (
+  token_hash   TEXT PRIMARY KEY,
+  user_id      BIGINT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+  created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+  last_seen_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  expires_at   TIMESTAMPTZ NOT NULL
+);
+
+-- Sign-out-everywhere and the expiry sweep are the only queries that do not
+-- key on token_hash, and they are exactly these two indexes.
+CREATE INDEX IF NOT EXISTS sessions_user_id_idx ON sessions (user_id);
+CREATE INDEX IF NOT EXISTS sessions_expires_at_idx ON sessions (expires_at);
+
+-- Entitlement to the paid tier, which is lineup building and nothing else.
+--
+-- Keyed on (user_id, source) rather than user_id alone because payment can
+-- arrive from more than one place: a web checkout today, an Apple or Google
+-- in-app purchase later. One row per source lets a second one be added without
+-- migrating the first, and lets a lapsed web subscription and an active IAP
+-- coexist while support works out which one the customer meant.
+--
+-- `external_ref` is the processor's own id for the subscription, which is what
+-- a webhook arrives carrying and the only way to reconcile against it.
+CREATE TABLE IF NOT EXISTS subscriptions (
+  user_id            BIGINT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+  source             TEXT NOT NULL,
+  status             TEXT NOT NULL,
+  current_period_end TIMESTAMPTZ,
+  external_ref       TEXT,
+  created_at         TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at         TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (user_id, source)
 );

@@ -23,9 +23,26 @@ import {
   STRATEGIES,
   TOP_EDGES,
 } from '@dfs/shared';
+import {
+  bearerToken,
+  createSession,
+  findUserById,
+  hashPassword,
+  isValidEmail,
+  isValidPassword,
+  normalizeEmail,
+  requireAuth,
+  requireEntitlement,
+  revokeSession,
+  verifyPassword,
+  MIN_PASSWORD_LENGTH,
+  type AuthUser,
+} from './auth.ts';
 import { sql } from './db.ts';
+import { PURCHASE_URL, SHOW_EXTERNAL_PURCHASE_LINK } from './env.ts';
 import { currentWeek, previousWeek } from './matchups.ts';
 import { buildLineup } from './lineups.ts';
+import { clearFailures, isThrottled, recordFailure } from './throttle.ts';
 
 function weekLabel(week: number, gameType: string): string {
   switch (gameType) {
@@ -63,11 +80,111 @@ function roleOrder(unit: string | null, role: string | null): number {
 
 export function createApp() {
   const app = express();
-  app.use(express.json());
+  app.use(express.json({ limit: '16kb' }));
 
   app.get('/health', route(async (_req: Request, res: Response) => {
     const [row] = await sql<{ count: number }[]>`SELECT COUNT(*)::int AS count FROM rankings`;
     res.json({ ok: true, rankedPlayers: row?.count ?? 0 });
+  }));
+
+  function session(res: Response, user: AuthUser, token: string, expiresAt: Date) {
+    res.json({
+      token,
+      expiresAt: expiresAt.toISOString(),
+      user: { id: user.id, email: user.email, entitled: user.entitled },
+    });
+  }
+
+  app.post('/auth/register', route(async (req: Request, res: Response) => {
+    const email = typeof req.body?.email === 'string' ? normalizeEmail(req.body.email) : '';
+    const password = typeof req.body?.password === 'string' ? req.body.password : '';
+
+    if (!isValidEmail(email)) {
+      res.status(400).json({ error: 'Enter a valid email address' });
+      return;
+    }
+    if (!isValidPassword(password)) {
+      res.status(400).json({
+        error: `Password must be at least ${MIN_PASSWORD_LENGTH} characters`,
+      });
+      return;
+    }
+
+    // ON CONFLICT DO NOTHING rather than a SELECT then an INSERT: the check and
+    // the write are one statement, so two simultaneous signups for the same
+    // address cannot both pass the check.
+    const [row] = await sql<{ id: string }[]>`
+      INSERT INTO users (email, password_hash)
+      VALUES (${email}, ${await hashPassword(password)})
+      ON CONFLICT (email) DO NOTHING
+      RETURNING id::text AS id
+    `;
+    if (!row) {
+      res.status(409).json({ error: 'An account with that email already exists' });
+      return;
+    }
+
+    const { token, expiresAt } = await createSession(row.id);
+    const user = await findUserById(row.id);
+    if (!user) {
+      res.status(500).json({ error: 'Internal error' });
+      return;
+    }
+
+    session(res, user, token, expiresAt);
+  }));
+
+  app.post('/auth/login', route(async (req: Request, res: Response) => {
+    const email = typeof req.body?.email === 'string' ? normalizeEmail(req.body.email) : '';
+    const password = typeof req.body?.password === 'string' ? req.body.password : '';
+
+    const throttleKey = `${req.ip ?? 'unknown'}:${email}`;
+    if (isThrottled(throttleKey)) {
+      res.status(429).json({ error: 'Too many attempts. Try again later.' });
+      return;
+    }
+
+    const [row] = await sql<{ id: string; password_hash: string }[]>`
+      SELECT id::text AS id, password_hash FROM users WHERE email = ${email}
+    `;
+
+    // One message and one code for both "no such account" and "wrong password".
+    // Telling them apart is an account-existence oracle, which is how a list of
+    // addresses gets confirmed against a service.
+    const ok = row ? await verifyPassword(password, row.password_hash) : false;
+    if (!row || !ok) {
+      recordFailure(throttleKey);
+      res.status(401).json({ error: 'Email or password is incorrect' });
+      return;
+    }
+
+    clearFailures(throttleKey);
+    await sql`UPDATE users SET last_login_at = now() WHERE id = ${row.id}`;
+
+    const { token, expiresAt } = await createSession(row.id);
+    const user = await findUserById(row.id);
+    if (!user) {
+      res.status(500).json({ error: 'Internal error' });
+      return;
+    }
+    session(res, user, token, expiresAt);
+  }));
+
+  app.post('/auth/logout', requireAuth, route(async (req: Request, res: Response) => {
+    const token = bearerToken(req);
+    if (token) await revokeSession(token);
+
+    res.json({ ok: true });
+  }));
+
+  app.get('/auth/me', requireAuth, route(async (req: Request, res: Response) => {
+    res.json({
+      user: req.user,
+      purchase: {
+        showExternalLink: SHOW_EXTERNAL_PURCHASE_LINK,
+        url: SHOW_EXTERNAL_PURCHASE_LINK ? PURCHASE_URL : null,
+      },
+    });
   }));
 
   app.get('/meta', route(async (_req: Request, res: Response) => {
@@ -337,7 +454,10 @@ export function createApp() {
     res.json({ season: current.season, week: current.week, slates, strategies: STRATEGIES });
   }));
 
-  app.get('/lineup', route(async (req: Request, res: Response) => {
+  // Reads are open so a guest can browse without an account. Lineup building
+  // is the one thing that is not: today it needs a session, and turning
+  // PAYWALL_ENABLED on is what makes requireEntitlement narrow that to payers.
+  app.get('/lineup', requireAuth, requireEntitlement, route(async (req: Request, res: Response) => {
     const current = await currentWeek();
     const season = req.query.season ? Number(req.query.season) : current?.season;
     const week = req.query.week ? Number(req.query.week) : current?.week;

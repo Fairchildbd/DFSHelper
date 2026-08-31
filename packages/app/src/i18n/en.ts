@@ -399,4 +399,39 @@ export const en = {
     'Coaching profiles are keyed to the coach, not the team. When a staff is new the screen falls back to the franchise’s recent past and labels itself as doing so.',
   'about.caveats.frozen':
     'Predictions are frozen at kickoff. Anything graded after a game was played is marked as a worked example, not a forecast the model made in advance.',
+
+  'about.account.title': 'Account',
+  'about.account.signedInAs': 'Signed in as {{email}}',
+  'about.account.signOut': 'Sign out',
+  'about.account.guest':
+    'You’re browsing as a guest. Sign in to build lineups and keep your work across devices.',
+  'about.account.signIn': 'Sign in or create an account',
+
+  'app.wordmark.lead': 'DFS',
+  'app.wordmark.accent': 'Matchup',
+
+  'auth.tagline': 'Sharper matchups. Better lineups.',
+  'auth.logoAlt': 'DFS Matchup',
+  'auth.email.label': 'Email address',
+  'auth.email.placeholder': 'Email address',
+  'auth.password.label': 'Password',
+  'auth.password.placeholder': 'Password',
+  'auth.password.show': 'Show password',
+  'auth.password.hide': 'Hide password',
+  'auth.verifyPassword.label': 'Verify password',
+  'auth.verifyPassword.placeholder': 'Verify password',
+  'auth.verifyPassword.show': 'Show verify password',
+  'auth.verifyPassword.hide': 'Hide verify password',
+  'auth.forgot': 'Forgot password?',
+  'auth.signIn': 'Sign In',
+  'auth.createAccount': 'Create account',
+  'auth.continueAsGuest': 'Continue as guest',
+  'auth.sync':
+    'We’ll keep your rankings and preferences in sync across all your devices.',
+  'auth.restoring': 'Signing you in…',
+  'auth.error.missingFields': 'Enter your email address and password.',
+  'auth.error.passwordTooShort': 'Password must be at least {{length}} characters.',
+  'auth.error.passwordMismatch': 'Those passwords don’t match.',
+  'auth.error.generic':
+    'Something went wrong. Try again, or continue as a guest for now.',
 } satisfies Record<string, string>;
