@@ -67,6 +67,27 @@ export const DVP_METRICS: DvpMetric[] = [
 
 export const DVP_POSITIONS: Position[] = ['QB', 'RB', 'WR', 'TE'];
 
+export const LINE_SLOTS = ['LDE', 'RDE', 'LDT', 'RDT', 'NT'];
+
+export const OFF_BALL_SLOTS = ['LILB', 'RILB', 'MLB', 'SLB', 'WLB'];
+
+export const CORNER_SLOTS = ['LCB', 'RCB', 'NB'];
+
+export const SAFETY_SLOTS = ['FS', 'SS'];
+
+export interface DefenseLevel {
+  slots: string[];
+  weight: number;
+}
+
+export const SUPPORT_WEIGHT = 0.25;
+
+export const QB_LANE_SOURCES: Array<{ lane: LaneKey; weight: number }> = [
+  { lane: 'ol_pass_pro', weight: 0.45 },
+  { lane: 'wr', weight: 0.4 },
+  { lane: 'te', weight: 0.15 },
+];
+
 export type LaneKey = 'qb_pass' | 'wr' | 'te' | 'rb_rush' | 'rb_recv' | 'ol_pass_pro';
 
 export interface Lane {
@@ -74,12 +95,15 @@ export interface Lane {
   label: string;
   shortLabel: string;
   offensePositions: Position[];
+  supportPositions: Position[];
   maxRank: number;
   dvpPosition: Position | null;
   usageMetric: string | null;
   defenseMetrics: string[];
+  blitzMetric: string | null;
   dvoaMetric: string | null;
-  defensePositions: Position[];
+  defenseLevels: DefenseLevel[];
+  defenseMaxRank: number;
 }
 
 export const LANES: Lane[] = [
@@ -88,72 +112,106 @@ export const LANES: Lane[] = [
     label: 'Passing game',
     shortLabel: 'pass game',
     offensePositions: ['QB'],
+    supportPositions: [],
     maxRank: 1,
     dvpPosition: 'QB',
     usageMetric: 'proe',
     defenseMetrics: ['pressure_rate'],
+    blitzMetric: null,
     dvoaMetric: 'epa_allowed_pass_adj',
-    defensePositions: ['CB', 'S'],
+    defenseLevels: [
+      { slots: CORNER_SLOTS, weight: 0.5 },
+      { slots: SAFETY_SLOTS, weight: 0.25 },
+      { slots: LINE_SLOTS, weight: 0.25 },
+    ],
+    defenseMaxRank: 1,
   },
   {
     key: 'wr',
     label: 'Receivers vs coverage',
     shortLabel: 'WRs',
     offensePositions: ['WR'],
+    supportPositions: [],
     maxRank: 4,
     dvpPosition: 'WR',
     usageMetric: 'wr_target_share',
     defenseMetrics: ['explosive_allowed_rate'],
+    blitzMetric: null,
     dvoaMetric: 'epa_allowed_pass_adj',
-    defensePositions: ['CB', 'S'],
+    defenseLevels: [
+      { slots: CORNER_SLOTS, weight: 0.7 },
+      { slots: SAFETY_SLOTS, weight: 0.3 },
+    ],
+    defenseMaxRank: 1,
   },
   {
     key: 'te',
     label: 'Tight ends vs linebackers and safeties',
     shortLabel: 'TEs',
     offensePositions: ['TE'],
+    supportPositions: [],
     maxRank: 2,
     dvpPosition: 'TE',
     usageMetric: 'te_target_share',
     defenseMetrics: ['explosive_allowed_rate'],
+    blitzMetric: null,
     dvoaMetric: 'epa_allowed_pass_adj',
-    defensePositions: ['LB', 'S'],
+    defenseLevels: [
+      { slots: OFF_BALL_SLOTS, weight: 0.6 },
+      { slots: SAFETY_SLOTS, weight: 0.4 },
+    ],
+    defenseMaxRank: 1,
   },
   {
     key: 'rb_rush',
     label: 'Run game vs front seven',
     shortLabel: 'run game',
     offensePositions: ['RB', 'FB'],
+    supportPositions: ['OT', 'OG', 'C', 'TE'],
     maxRank: 2,
     dvpPosition: 'RB',
     usageMetric: null,
     defenseMetrics: ['heavy_box_rate'],
+    blitzMetric: null,
     dvoaMetric: 'epa_allowed_rush_adj',
-    defensePositions: ['DT', 'DE', 'EDGE', 'LB'],
+    defenseLevels: [
+      { slots: LINE_SLOTS, weight: 0.65 },
+      { slots: OFF_BALL_SLOTS, weight: 0.35 },
+    ],
+    defenseMaxRank: 1,
   },
   {
     key: 'rb_recv',
     label: 'Backs in the passing game',
     shortLabel: 'pass-catching backs',
     offensePositions: ['RB'],
+    supportPositions: [],
     maxRank: 2,
     dvpPosition: 'RB',
     usageMetric: 'rb_target_share',
     defenseMetrics: ['blitz_rate'],
+    blitzMetric: null,
     dvoaMetric: 'epa_allowed_pass_adj',
-    defensePositions: ['LB'],
+    defenseLevels: [{ slots: OFF_BALL_SLOTS, weight: 1 }],
+    defenseMaxRank: 1,
   },
   {
     key: 'ol_pass_pro',
     label: 'Pass protection vs rush',
     shortLabel: 'pass protection',
     offensePositions: ['OT', 'OG', 'C'],
-    maxRank: 5,
+    supportPositions: ['TE', 'RB'],
+    maxRank: 1,
     dvpPosition: null,
     usageMetric: null,
-    defenseMetrics: ['pressure_rate', 'blitz_rate'],
+    defenseMetrics: ['pressure_rate'],
+    blitzMetric: 'blitz_rate',
     dvoaMetric: 'epa_allowed_pass_adj',
-    defensePositions: ['EDGE', 'DE', 'DT'],
+    defenseLevels: [
+      { slots: LINE_SLOTS, weight: 0.75 },
+      { slots: OFF_BALL_SLOTS, weight: 0.25 },
+    ],
+    defenseMaxRank: 1,
   },
 ];
 
@@ -170,6 +228,14 @@ export function laneForPosition(position: Position): LaneKey | null {
     case 'OT': case 'OG': case 'C': return 'ol_pass_pro';
     default: return null;
   }
+}
+
+export function defensiveLaneFor(posAbb: string | null | undefined): LaneKey | null {
+  if (!posAbb) return null;
+  if (LINE_SLOTS.includes(posAbb)) return 'ol_pass_pro';
+  if (OFF_BALL_SLOTS.includes(posAbb)) return 'rb_rush';
+  if (CORNER_SLOTS.includes(posAbb) || SAFETY_SLOTS.includes(posAbb)) return 'wr';
+  return null;
 }
 
 export function roleWeight(posRank: number | null | undefined, maxRank: number): number {

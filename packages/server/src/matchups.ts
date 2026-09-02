@@ -10,6 +10,7 @@ import {
   gradePlayerMatchup,
   qbRushAdjustment,
   laneForPosition,
+  defensiveLaneFor,
   normalizePosition,
   percentileOf,
   resolveTendencies,
@@ -18,6 +19,8 @@ import {
   type Distribution,
   type Lane,
   type LaneEdge,
+  SUPPORT_WEIGHT,
+  QB_LANE_SOURCES,
   type Position,
   type ResolvedTendencies,
   type Side,
@@ -60,6 +63,7 @@ interface DepthRow {
   season: number;
   team: string;
   gsis_id: string;
+  pos_abb: string | null;
   pos_rank: number | null;
   position: string;
   display_name: string;
@@ -67,9 +71,18 @@ interface DepthRow {
   ranked_position: string | null;
 }
 
-const DVP_WEIGHT = 0.45;
-const DVOA_WEIGHT = 0.3;
-const SCHEME_WEIGHT = 0.25;
+interface StrengthQuery {
+  side: Side;
+  season: number;
+  team: string;
+  lane: Lane;
+}
+
+const DVP_WEIGHT = 0.3;
+const DVOA_WEIGHT = 0.25;
+const SCHEME_WEIGHT = 0.2;
+const DEFENSE_UNIT_WEIGHT = 0.25;
+const BLITZ_WEIGHT = 0.15;
 
 const VOLUME_ROLE_WEIGHT = 0.6;
 const VOLUME_PACE_WEIGHT = 0.2;
@@ -239,18 +252,19 @@ export async function computeMatchups(opts: MatchupOptions = {}): Promise<{
       FROM team_dvoa WHERE side = 'defense'
     `,
     sql<DepthRow[]>`
-      SELECT d.season, d.team, d.gsis_id, d.pos_rank, d.position,
+      SELECT d.season, d.team, d.gsis_id, d.pos_abb, d.pos_rank, d.position,
              COALESCE(r.display_name, p.display_name) AS display_name,
              r.composite::float8 AS composite,
              r.position AS ranked_position
       FROM depth_chart d
       JOIN players p ON p.gsis_id = d.gsis_id
       LEFT JOIN rankings r ON r.gsis_id = d.gsis_id
-      -- Special-teams roles carry no position. A returner is already on this
-      -- chart under his real job, and his KR line ranks first, so letting the
-      -- rows through would replace a starting receiver with an unrankable
-      -- duplicate in the pass below.
-      WHERE d.position IS NOT NULL
+      -- A returner already sits on this chart under his real job, and his KR or
+      -- PR line usually ranks first, so the dedupe below keeps the returner slot
+      -- and hands a fourth receiver a starter's role weight. Filtering on unit
+      -- catches them; filtering on position does not, because a returner
+      -- carries the position he actually plays.
+      WHERE d.position IS NOT NULL AND d.unit IS DISTINCT FROM 'special'
     `,
   ]);
 
@@ -336,16 +350,18 @@ export async function computeMatchups(opts: MatchupOptions = {}): Promise<{
   const rawStrength = new Map<string, number>();
   for (const [key, roster] of depthByTeam) {
     for (const lane of LANES) {
-      const raw = unitStrength(roster, lane);
-      if (raw != null) rawStrength.set(`${key}|${lane.key}`, raw);
+      const offense = offenseUnitStrength(roster, lane);
+      if (offense != null) rawStrength.set(`offense|${key}|${lane.key}`, offense);
+      const defense = defenseUnitStrength(roster, lane);
+      if (defense != null) rawStrength.set(`defense|${key}|${lane.key}`, defense);
     }
   }
 
   const laneDist: Record<string, Distribution> = {};
   const bySeasonLane = new Map<string, number[]>();
   for (const [key, value] of rawStrength) {
-    const [seasonPart, , lanePart] = key.split('|');
-    const bucket = `${seasonPart}|${lanePart}`;
+    const [sidePart, seasonPart, , lanePart] = key.split('|');
+    const bucket = `${sidePart}|${seasonPart}|${lanePart}`;
     const list = bySeasonLane.get(bucket);
     if (list) list.push(value);
     else bySeasonLane.set(bucket, [value]);
@@ -355,16 +371,12 @@ export async function computeMatchups(opts: MatchupOptions = {}): Promise<{
     if (built[bucket]) laneDist[bucket] = built[bucket];
   }
 
-  const strengthPercentile = (
-    gameSeason: number,
-    team: string,
-    lane: Lane,
-  ): number | null => {
-    const roster = rosterFor(gameSeason, team);
-    const rosterSeason = roster[0]?.season ?? gameSeason;
+  const strengthPercentile = ({ side, season, team, lane }: StrengthQuery): number | null => {
+    const roster = rosterFor(season, team);
+    const rosterSeason = roster[0]?.season ?? season;
     return percentileOf(
-      rawStrength.get(`${rosterSeason}|${team}|${lane.key}`),
-      laneDist[`${rosterSeason}|${lane.key}`],
+      rawStrength.get(`${side}|${rosterSeason}|${team}|${lane.key}`),
+      laneDist[`${side}|${rosterSeason}|${lane.key}`],
     );
   };
 
@@ -388,7 +400,18 @@ export async function computeMatchups(opts: MatchupOptions = {}): Promise<{
           lane,
           offense,
           defense,
-          offenseStrength: strengthPercentile(game.season, offense.team, lane),
+          offenseStrength: strengthPercentile({
+            side: 'offense',
+            season: game.season,
+            team: offense.team,
+            lane,
+          }),
+          defenseUnit: strengthPercentile({
+            side: 'defense',
+            season: game.season,
+            team: defense.team,
+            lane,
+          }),
           dvpByTeam,
           dvpDist,
           dvoaByTeam,
@@ -404,6 +427,23 @@ export async function computeMatchups(opts: MatchupOptions = {}): Promise<{
         laneEdgeByTeamLane.set(`${offense.team}|${lane.key}`, edge.edge);
         laneSuppression.set(`${defense.team}|${lane.key}`, edge.defenseStrength);
       }
+    }
+
+    for (const side of [home, away]) {
+      let weighted = 0;
+      let weight = 0;
+      for (const source of QB_LANE_SOURCES) {
+        const sourceEdge = laneEdgeByTeamLane.get(`${side.team}|${source.lane}`);
+        if (sourceEdge == null) continue;
+        weighted += sourceEdge * source.weight;
+        weight += source.weight;
+      }
+      if (weight === 0) continue;
+
+      const derived = clamp(weighted / weight, -100, 100);
+      laneEdgeByTeamLane.set(`${side.team}|qb_pass`, derived);
+      const entry = edges.find((e) => e.lane === 'qb_pass' && e.offense === side.team);
+      if (entry) entry.edge = derived;
     }
 
     const pacePercentile = combinedPacePercentile(home, away, books.offense);
@@ -464,34 +504,49 @@ export async function computeMatchups(opts: MatchupOptions = {}): Promise<{
       for (const player of roster) {
         const position = normalizePosition(player.ranked_position ?? player.position);
         if (!position) continue;
-        const laneKey = laneForPosition(position);
-        if (!laneKey) continue;
-        const lane = LANES_BY_KEY[laneKey];
+        const offenseLaneKey = laneForPosition(position);
+        const defenseLaneKey = offenseLaneKey ? null : defensiveLaneFor(player.pos_abb);
+        let effectiveLane: Lane;
+        let laneEdge: number | null;
+        let usage: number | null;
+        let roleMax: number;
 
-        const effectiveLane =
-          position === 'RB' &&
-          (tendencyPercentile(books.offense, team.offense, 'offense', 'rb_target_share') ?? 0) >= 65
-            ? LANES_BY_KEY.rb_recv
-            : lane;
+        if (offenseLaneKey) {
+          const lane = LANES_BY_KEY[offenseLaneKey];
+          effectiveLane =
+            position === 'RB' &&
+            (tendencyPercentile(books.offense, team.offense, 'offense', 'rb_target_share') ?? 0) >= 65
+              ? LANES_BY_KEY.rb_recv
+              : lane;
 
-        if (player.pos_rank != null && player.pos_rank > effectiveLane.maxRank) continue;
+          if (player.pos_rank != null && player.pos_rank > effectiveLane.maxRank) continue;
+          roleMax = effectiveLane.maxRank;
 
-        const unitEdge = laneEdgeByTeamLane.get(`${team.team}|${effectiveLane.key}`) ?? null;
+          const unitEdge = laneEdgeByTeamLane.get(`${team.team}|${effectiveLane.key}`) ?? null;
+          const rushAdjustment =
+            position === 'QB'
+              ? qbRushAdjustment(
+                  qbCarries.get(player.gsis_id),
+                  laneSuppression.get(`${opponent.team}|rb_rush`),
+                )
+              : 0;
+          laneEdge = unitEdge == null ? null : clamp(unitEdge + rushAdjustment, -100, 100);
+          usage = effectiveLane.usageMetric
+            ? tendencyPercentile(books.offense, team.offense, 'offense', effectiveLane.usageMetric)
+            : null;
+        } else if (defenseLaneKey) {
+          effectiveLane = LANES_BY_KEY[defenseLaneKey];
+          if (player.pos_rank != null && player.pos_rank > effectiveLane.defenseMaxRank) continue;
+          roleMax = effectiveLane.defenseMaxRank;
 
-        const rushAdjustment =
-          position === 'QB'
-            ? qbRushAdjustment(
-                qbCarries.get(player.gsis_id),
-                laneSuppression.get(`${opponent.team}|rb_rush`),
-              )
-            : 0;
-        const laneEdge =
-          unitEdge == null ? null : clamp(unitEdge + rushAdjustment, -100, 100);
-        const usage = effectiveLane.usageMetric
-          ? tendencyPercentile(books.offense, team.offense, 'offense', effectiveLane.usageMetric)
-          : null;
+          const facedEdge = laneEdgeByTeamLane.get(`${opponent.team}|${effectiveLane.key}`) ?? null;
+          laneEdge = facedEdge == null ? null : clamp(-facedEdge, -100, 100);
+          usage = null;
+        } else {
+          continue;
+        }
 
-        const role = roleWeight(player.pos_rank, effectiveLane.maxRank) * 100;
+        const role = roleWeight(player.pos_rank, roleMax) * 100;
         const volume =
           VOLUME_ROLE_WEIGHT * role +
           VOLUME_PACE_WEIGHT * (pace ?? 50) +
@@ -762,19 +817,53 @@ function combinedPacePercentile(
   return percentileOf(mean, book.dist.sec_per_play, true);
 }
 
-function unitStrength(roster: DepthRow[], lane: Lane): number | null {
+function offenseUnitStrength(roster: DepthRow[], lane: Lane): number | null {
   let weighted = 0;
   let weight = 0;
 
   for (const player of roster) {
     const position = normalizePosition(player.ranked_position ?? player.position);
-    if (!position || !lane.offensePositions.includes(position as Position)) continue;
+    if (!position) continue;
+    const isPrimary = lane.offensePositions.includes(position);
+    const isSupport = lane.supportPositions.includes(position);
+    if (!isPrimary && !isSupport) continue;
     if (player.pos_rank != null && player.pos_rank > lane.maxRank) continue;
     if (player.composite == null) continue;
 
-    const w = roleWeight(player.pos_rank, lane.maxRank);
+    const w = roleWeight(player.pos_rank, lane.maxRank) * (isPrimary ? 1 : SUPPORT_WEIGHT);
     weighted += player.composite * w;
     weight += w;
+  }
+
+  return weight > 0 ? weighted / weight : null;
+}
+
+function levelStrength(roster: DepthRow[], slots: string[], maxRank: number): number | null {
+  let weighted = 0;
+  let weight = 0;
+
+  for (const player of roster) {
+    if (!player.pos_abb || !slots.includes(player.pos_abb)) continue;
+    if (player.pos_rank != null && player.pos_rank > maxRank) continue;
+    if (player.composite == null) continue;
+
+    const w = roleWeight(player.pos_rank, maxRank);
+    weighted += player.composite * w;
+    weight += w;
+  }
+
+  return weight > 0 ? weighted / weight : null;
+}
+
+function defenseUnitStrength(roster: DepthRow[], lane: Lane): number | null {
+  let weighted = 0;
+  let weight = 0;
+
+  for (const level of lane.defenseLevels) {
+    const strength = levelStrength(roster, level.slots, lane.defenseMaxRank);
+    if (strength == null) continue;
+    weighted += strength * level.weight;
+    weight += level.weight;
   }
 
   return weight > 0 ? weighted / weight : null;
@@ -785,6 +874,7 @@ interface LaneEvaluation {
   offense: SideContext;
   defense: SideContext;
   offenseStrength: number | null;
+  defenseUnit: number | null;
   dvpByTeam: Map<string, number>;
   dvpDist: Record<string, Distribution>;
   dvoaByTeam: Map<string, number>;
@@ -794,7 +884,8 @@ interface LaneEvaluation {
 
 function evaluateLane(input: LaneEvaluation): LaneEdge {
   const {
-    lane, offense, defense, offenseStrength, dvpByTeam, dvpDist, dvoaByTeam, dvoaDist, books,
+    lane, offense, defense, offenseStrength, defenseUnit,
+    dvpByTeam, dvpDist, dvoaByTeam, dvoaDist, books,
   } = input;
 
   let dvpPercentile: number | null = null;
@@ -809,6 +900,10 @@ function evaluateLane(input: LaneEvaluation): LaneEdge {
     dvoaPercentile = percentileOf(allowed, dvoaDist[lane.dvoaMetric], true);
   }
 
+  const blitzPercentile = lane.blitzMetric
+    ? tendencyPercentile(books.defense, defense.defense, 'defense', lane.blitzMetric)
+    : null;
+
   const schemeParts = lane.defenseMetrics
     .map((metric) => tendencyPercentile(books.defense, defense.defense, 'defense', metric))
     .filter((v): v is number => v != null);
@@ -821,6 +916,8 @@ function evaluateLane(input: LaneEvaluation): LaneEdge {
     [dvpPercentile, DVP_WEIGHT],
     [dvoaPercentile, DVOA_WEIGHT],
     [schemePercentile, SCHEME_WEIGHT],
+    [defenseUnit, DEFENSE_UNIT_WEIGHT],
+    [blitzPercentile, BLITZ_WEIGHT],
   ];
   let weighted = 0;
   let weight = 0;
