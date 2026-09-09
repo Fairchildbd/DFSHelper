@@ -10,8 +10,11 @@ import {
   summarizeLineup,
 } from './dfs.js';
 import { NEUTRAL_TOTAL, TOTAL_RANGE } from './matchups.js';
+import type { Tier } from './tiers.js';
 
 const BUCKET = 50;
+
+const POOL_LIMIT = 64;
 
 const SEATS = 6;
 
@@ -19,18 +22,32 @@ export const SHOWDOWN_MAX_WR = 2;
 
 export const SHOWDOWN_BRINGBACK_WR = 1;
 
-export const LOW_SCORING_MAX_PER_TEAM = 3;
+export const SHOOTOUT_MAX_PER_TEAM = 3;
 
-export const SHOOTOUT_MAX_PER_TEAM = 4;
+export const LEAN_MAX_FROM_OTHER_TEAM = 2;
+
+export const LOW_SCORING_MAX_FROM_OTHER_TEAM = 2;
+
+export const EXPENSIVE_SKILL_SALARY = 10000;
+
+export const EXPENSIVE_SKILL_FOR_PUNTS = 4;
+
+const SKILL_POSITIONS = new Set<DkPosition>(['QB', 'RB', 'WR', 'TE']);
+
+export interface ShowdownCandidate extends LineupCandidate {
+  tier: Tier;
+}
 
 
 export interface ShowdownRules {
   captainTeam?: string | null;
+  captainId?: string | null;
   captainPositions?: DkPosition[];
   requireQbTeams?: string[];
   bar?: DkPosition[];
   requireOneOf?: DkPosition[];
   maxPerTeam?: number;
+  maxByTeam?: Record<string, number>;
   wrCapByTeam?: Record<string, number>;
 }
 
@@ -47,15 +64,18 @@ export function showdownShapes(teams: readonly [string, string]): ShowdownShape[
     key: `lean-${team}`,
     label: `If ${team} has a good game`,
     description:
-      `Betting on the ${team} offense: their quarterback, up to two of his receivers, ` +
-      `and whatever else the salary buys — a back, a tight end, both. At least one ` +
-      `${other} player brings the game back. No kicker and no defense: those seats pay ` +
-      `when drives stall, which is the opposite of what this build needs.`,
+      `Betting on the ${team} offense. Their most expensive player wears the captain's ` +
+      `patch, because a lean is a bet on the top of that roster and the 1.5x belongs ` +
+      `there. Their quarterback, up to two of his receivers, and no more than ` +
+      `${LEAN_MAX_FROM_OTHER_TEAM} ${other} players to bring the game back. No kicker ` +
+      `and no defense: those seats pay when drives stall, which is the opposite of what ` +
+      `this build needs.`,
     team,
     rules: {
       captainTeam: team,
       requireQbTeams: [team],
       bar: ['K', 'DST'],
+      maxByTeam: { [other]: LEAN_MAX_FROM_OTHER_TEAM },
       wrCapByTeam: { [other]: SHOWDOWN_BRINGBACK_WR },
     },
   });
@@ -68,9 +88,10 @@ export function showdownShapes(teams: readonly [string, string]): ShowdownShape[
       label: 'If it is a shootout',
       description:
         'Both offenses producing rather than one, so both quarterbacks are rostered and ' +
-        'the receivers around them are the ones their own quarterback throws to. No kicker ' +
-        `and no defense, and no more than ${SHOOTOUT_MAX_PER_TEAM} from either side — a ` +
-        'shootout that is really a bet on one team is already the entry above.',
+        `the receivers around them are the ones their own quarterback throws to. ` +
+        `${SHOOTOUT_MAX_PER_TEAM} from each side, the best players either roster has, and ` +
+        'the captain comes from whichever side the lanes favour so the extra half-salary ' +
+        'is spent there. No kicker and no defense.',
       team: null,
       rules: {
         requireQbTeams: [teams[0], teams[1]],
@@ -82,18 +103,17 @@ export function showdownShapes(teams: readonly [string, string]): ShowdownShape[
       key: 'low-scoring',
       label: 'If it stays low-scoring',
       description:
-        'The entry for a game that never gets going. No quarterback, no more than ' +
-        `${LOW_SCORING_MAX_PER_TEAM} from either side, and at least one of the kicker or a ` +
-        'defense — the two seats that only pay when drives stall. The captain is a back, a ' +
-        'tight end, the kicker or a defense, never a receiver: a receiver captain needs the ' +
-        'passing day this build is the hedge against. This is what makes the kicker a ' +
-        'structure rather than a guess.',
+        'The entry for a game that never gets going. It starts from a defense and builds ' +
+        'that team around it: the only quarterback it will seat is the one whose defense ' +
+        'it just bought, because the short fields that defense creates are what his ' +
+        `offense scores on. No more than ${LOW_SCORING_MAX_FROM_OTHER_TEAM} seats come ` +
+        'from the other side, and never their quarterback. A kicker is allowed but never ' +
+        'required, and only the other side\'s: if this defense is winning, it is the ' +
+        'other offense that stalls into field goal range. The captain is a back, a tight ' +
+        'end, the kicker or the defense, never a receiver.',
       team: null,
       rules: {
-        bar: ['QB'],
-        captainPositions: ['RB', 'TE', 'K', 'DST'],
-        requireOneOf: ['K', 'DST'],
-        maxPerTeam: LOW_SCORING_MAX_PER_TEAM,
+        captainPositions: ['QB', 'RB', 'TE', 'K', 'DST'],
       },
     },
   ];
@@ -132,7 +152,7 @@ interface StateSpec {
   wrCap: [number, number];
   trackQb: [boolean, boolean];
   oneOf: Set<DkPosition> | null;
-  maxPerTeam: number;
+  caps: [number, number];
   capped: boolean;
   radix: number[];
   stride: number[];
@@ -154,16 +174,18 @@ function buildSpec(rules: ShowdownRules, teams: readonly [string, string]): Stat
     wrCap[0] >= 2 || needQb.has(teams[0]),
     wrCap[1] >= 2 || needQb.has(teams[1]),
   ];
-  const maxPerTeam = Math.min(rules.maxPerTeam ?? SEATS - 1, SEATS - 1);
+  const capFor = (team: string): number =>
+    Math.min(rules.maxByTeam?.[team] ?? rules.maxPerTeam ?? SEATS - 1, SEATS - 1);
+  const caps: [number, number] = [capFor(teams[0]), capFor(teams[1])];
 
-  const capped = maxPerTeam < SEATS - 1;
+  const capped = caps[0] < SEATS - 1 || caps[1] < SEATS - 1;
 
   const radix = new Array<number>(8);
   radix[WR0] = wrCap[0] + 1;
   radix[WR1] = wrCap[1] + 1;
   radix[QB0] = trackQb[0] ? 2 : 1;
   radix[QB1] = trackQb[1] ? 2 : 1;
-  radix[COUNT0] = capped ? maxPerTeam + 1 : 2;
+  radix[COUNT0] = capped ? caps[0] + 1 : 2;
   radix[TEAM1] = capped ? 1 : 2;
   radix[ONE_OF] = rules.requireOneOf?.length ? 2 : 1;
   radix[CPT] = 2;
@@ -179,7 +201,7 @@ function buildSpec(rules: ShowdownRules, teams: readonly [string, string]): Stat
     wrCap,
     trackQb,
     oneOf: rules.requireOneOf?.length ? new Set(rules.requireOneOf) : null,
-    maxPerTeam,
+    caps,
     capped,
     radix,
     stride,
@@ -219,9 +241,9 @@ function advance(
   if (spec.capped) {
     if (team === 0) {
       const count = digit(COUNT0) + 1;
-      if (count > spec.maxPerTeam) return -1;
+      if (count > spec.caps[0]) return -1;
       set(COUNT0, count);
-    } else if (seats + 1 - digit(COUNT0) > spec.maxPerTeam) {
+    } else if (seats + 1 - digit(COUNT0) > spec.caps[1]) {
       return -1;
     }
   } else {
@@ -289,6 +311,13 @@ export function optimizeShowdownShape(
   const captainPositions = shape.rules.captainPositions
     ? new Set(shape.rules.captainPositions)
     : null;
+  const captainId = shape.rules.captainId ?? null;
+  const wearsTheC = (player: LineupCandidate): boolean =>
+    captainId != null
+      ? player.id === captainId
+      : (captainTeam == null || teamIndex(player.team) === captainTeam) &&
+        (captainPositions == null || captainPositions.has(player.position));
+  if (captainId != null && !usable.some((c) => c.id === captainId)) return null;
 
   const lockIds = new Set(options.locks ?? []);
   const locked = usable.filter((c) => lockIds.has(c.id));
@@ -297,10 +326,17 @@ export function optimizeShowdownShape(
   const limitFor = (player: LineupCandidate): number =>
     player.position === 'WR'
       ? spec.wrCap[teamIndex(player.team)]!
-      : Math.min(spec.maxPerTeam, SEATS - 1);
+      : spec.caps[teamIndex(player.team)]!;
 
-  const free = undominated(usable.filter((c) => !lockIds.has(c.id)), limitFor);
-  const pool = free.length > 64 ? [...free].sort((a, b) => b.value - a.value).slice(0, 64) : free;
+  const spared = usable.filter((c) => !lockIds.has(c.id) && c.id === captainId);
+  const free = undominated(
+    usable.filter((c) => !lockIds.has(c.id) && c.id !== captainId),
+    limitFor,
+  );
+  const pool =
+    free.length + spared.length > POOL_LIMIT
+      ? [...spared, ...[...free].sort((a, b) => b.value - a.value)].slice(0, POOL_LIMIT)
+      : [...spared, ...free];
 
   const buckets = SALARY_CAP / BUCKET + 1;
   const layer = buckets * spec.size;
@@ -334,8 +370,7 @@ export function optimizeShowdownShape(
     for (let i = 0; i < locked.length && state >= 0; i++) {
       const p = locked[i]!;
       const isCaptain = i === captainAt;
-      if (isCaptain && captainTeam != null && teamIndex(p.team) !== captainTeam) return;
-      if (isCaptain && captainPositions && !captainPositions.has(p.position)) return;
+      if (isCaptain && !wearsTheC(p)) return;
       state = advance(spec, state, i, teamIndex(p.team), p.position, isCaptain);
       spend += isCaptain ? Math.round(p.salary * CAPTAIN_MULTIPLIER) : p.salary;
       total += isCaptain ? p.value * CAPTAIN_MULTIPLIER : p.value;
@@ -355,10 +390,7 @@ export function optimizeShowdownShape(
     const cptValue = player.value * CAPTAIN_MULTIPLIER;
     const bit = index < 32 ? 1 << index : 1 << (index - 32);
     const hi = index >= 32;
-    const captainable =
-      (captainTeam == null || team === captainTeam) &&
-      (captainPositions == null || captainPositions.has(player.position));
-    const variants = captainable ? 2 : 1;
+    const variants = wearsTheC(player) ? 2 : 1;
 
     for (let seats = SEATS - 1; seats >= 0; seats--) {
       const from = seats * layer;
@@ -416,8 +448,8 @@ export function optimizeShowdownShape(
   }
   if (roster.length !== SEATS) return null;
 
-  const captainId = [...locked, ...pool][captain[bestAt]!]?.id;
-  const cpt = roster.find((p) => p.id === captainId);
+  const wornBy = [...locked, ...pool][captain[bestAt]!]?.id;
+  const cpt = roster.find((p) => p.id === wornBy);
   if (!cpt) return null;
 
   const picks: LineupPick[] = [
@@ -442,25 +474,182 @@ export interface ShowdownBuild extends ShowdownShape {
   problem: string | null;
 }
 
-export function buildShowdownSet(
-  candidates: LineupCandidate[],
+export interface ShowdownSetOptions extends OptimizeOptions {
+  leaning?: string | null;
+  offenseLanes?: Record<string, number>;
+}
+
+export const DEFENSE_MATCHUP_WEIGHT = 0.5;
+
+const NEUTRAL_PERCENTILE = 50;
+
+function laneAsPercentile(edge: number): number {
+  return NEUTRAL_PERCENTILE - edge / 2;
+}
+
+export function defenceFavourite(
+  defenses: readonly ShowdownCandidate[],
   teams: readonly [string, string],
-  options: OptimizeOptions = {},
-): ShowdownBuild[] {
-  return showdownShapes(teams).map((shape) => {
-    const lineup = optimizeShowdownShape(candidates, shape, options);
-    return {
+  offenseLanes: Record<string, number> | undefined,
+): ShowdownCandidate | null {
+  let best: ShowdownCandidate | null = null;
+  let bestScore = -Infinity;
+
+  for (const defense of defenses) {
+    const opponent = teams.find((t) => t !== defense.team);
+    const facing = opponent == null ? undefined : offenseLanes?.[opponent];
+    const own = defense.matchupScore ?? NEUTRAL_PERCENTILE;
+    const score =
+      facing == null
+        ? own
+        : own * (1 - DEFENSE_MATCHUP_WEIGHT) +
+          laneAsPercentile(facing) * DEFENSE_MATCHUP_WEIGHT;
+
+    if (score > bestScore || (score === bestScore && best != null && defense.id < best.id)) {
+      best = defense;
+      bestScore = score;
+    }
+  }
+  return best;
+}
+
+const PREFERRED_TIERS: Tier[] = [1, 2, 3];
+
+const TIERS_WITH_PUNTS: Tier[] = [1, 2, 3, 4];
+
+export function slateRewardsPunts(candidates: readonly ShowdownCandidate[]): boolean {
+  const expensive = candidates.filter(
+    (c) => SKILL_POSITIONS.has(c.position) && c.salary >= EXPENSIVE_SKILL_SALARY,
+  );
+  return expensive.length >= EXPENSIVE_SKILL_FOR_PUNTS;
+}
+
+function tierLadder(
+  shape: ShowdownShape,
+  candidates: readonly ShowdownCandidate[],
+): Tier[][] {
+  const base = slateRewardsPunts(candidates)
+    ? [TIERS_WITH_PUNTS]
+    : [PREFERRED_TIERS, TIERS_WITH_PUNTS];
+
+  if (shape.key === 'shootout') return [[1], [1, 2], ...base];
+  if (shape.key === 'low-scoring') return [[1, 3], ...base];
+  return base;
+}
+
+function priciestSkillPlayer(
+  candidates: readonly ShowdownCandidate[],
+  team: string,
+): string | null {
+  let best: ShowdownCandidate | null = null;
+  for (const c of candidates) {
+    if (c.team !== team || !SKILL_POSITIONS.has(c.position)) continue;
+    if (!TIERS_WITH_PUNTS.includes(c.tier)) continue;
+    if (best == null || c.salary > best.salary || (c.salary === best.salary && c.id < best.id)) {
+      best = c;
+    }
+  }
+  return best?.id ?? null;
+}
+
+function dress(
+  shape: ShowdownShape,
+  candidates: readonly ShowdownCandidate[],
+  leaning: string | null,
+): ShowdownShape {
+  if (shape.team != null) {
+    const captainId = priciestSkillPlayer(candidates, shape.team);
+    return { ...shape, rules: { ...shape.rules, captainId } };
+  }
+  if (shape.key === 'shootout' && leaning != null) {
+    return { ...shape, rules: { ...shape.rules, captainTeam: leaning } };
+  }
+  return shape;
+}
+
+function buildLowScoring(
+  shape: ShowdownShape,
+  candidates: readonly ShowdownCandidate[],
+  teams: readonly [string, string],
+  options: ShowdownSetOptions,
+  ladder: readonly (readonly Tier[])[],
+): Lineup | null {
+  const defenses = candidates.filter((c) => c.position === 'DST');
+  const favourite = defenceFavourite(defenses, teams, options.offenseLanes);
+  if (favourite == null) return null;
+
+  for (const defense of [favourite, ...defenses.filter((d) => d.id !== favourite.id)]) {
+    const other = teams.find((t) => t !== defense.team);
+    if (other == null) continue;
+
+    const dressed = {
       ...shape,
-      lineup,
-      problem: lineup
-        ? null
-        : shape.team
-          ? `Nothing legal here: the pool has no affordable ${shape.team} quarterback to ` +
-            'build around.'
-          : shape.key === 'shootout'
-            ? 'Nothing legal here: both quarterbacks will not fit under the cap with four ' +
-              'other seats.'
-            : 'Nothing legal here: the pool has no kicker or defense priced under the cap.',
+      rules: { ...shape.rules, maxByTeam: { [other]: LOW_SCORING_MAX_FROM_OTHER_TEAM } },
+    };
+
+    for (const tiers of ladder) {
+      const pool = candidates.filter(
+        (c) =>
+          tiers.includes(c.tier) &&
+          (c.position !== 'DST' || c.id === defense.id) &&
+          (c.position !== 'QB' || c.team === defense.team) &&
+          (c.position !== 'K' || c.team === other),
+      );
+
+      const lineup = optimizeShowdownShape(pool, dressed, {
+        ...options,
+        locks: [...(options.locks ?? []), defense.id],
+      });
+      if (lineup) return lineup;
+    }
+  }
+  return null;
+}
+
+function firstLegal(
+  shape: ShowdownShape,
+  candidates: readonly ShowdownCandidate[],
+  options: ShowdownSetOptions,
+  ladder: readonly (readonly Tier[])[],
+): Lineup | null {
+  for (const tiers of ladder) {
+    const lineup = optimizeShowdownShape(
+      candidates.filter((c) => tiers.includes(c.tier)),
+      shape,
+      options,
+    );
+    if (lineup) return lineup;
+  }
+  return null;
+}
+
+export function buildShowdownSet(
+  candidates: ShowdownCandidate[],
+  teams: readonly [string, string],
+  options: ShowdownSetOptions = {},
+): ShowdownBuild[] {
+  const excluded = new Set(options.excludes ?? []);
+  const eligible = candidates.filter((c) => !excluded.has(c.id));
+  return showdownShapes(teams).map((shape) => {
+    const dressed = dress(shape, eligible, options.leaning ?? null);
+    const ladder = tierLadder(shape, eligible);
+    const lineup =
+      shape.key === 'low-scoring'
+        ? buildLowScoring(dressed, eligible, teams, options, ladder)
+        : firstLegal(dressed, eligible, options, ladder);
+
+    if (lineup) return { ...dressed, lineup, problem: null };
+
+    return {
+      ...dressed,
+      lineup: null,
+      problem: shape.team
+        ? `Nothing legal here: the pool has no affordable ${shape.team} quarterback to ` +
+          'build around.'
+        : shape.key === 'shootout'
+          ? 'Nothing legal here: both quarterbacks will not fit under the cap with four ' +
+            'other seats.'
+          : 'Nothing legal here: the pool has no defense to build the entry around.',
     };
   });
 }

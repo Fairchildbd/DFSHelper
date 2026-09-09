@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import {
   fetchLineup,
@@ -26,6 +26,12 @@ import { t as translate, useTranslation } from '../i18n';
 import { getPixels, radius, scoreColor, useStyles, useTheme, type Theme } from '../theme';
 
 const ALL = 'all';
+
+function byMatchupRead(builds: ShowdownBuild[]): ShowdownBuild[] {
+  return [...builds].sort(
+    (a, b) => (b.lineup?.averageGrade ?? -Infinity) - (a.lineup?.averageGrade ?? -Infinity),
+  );
+}
 
 export function LineupScreen({
   slate,
@@ -85,7 +91,8 @@ export function LineupScreen({
   };
 
   const selected = choice ?? data?.read?.scenario ?? ALL;
-  const shown = (data?.builds ?? []).filter((b) => selected === ALL || b.key === selected);
+  const ordered = useMemo(() => byMatchupRead(data?.builds ?? []), [data?.builds]);
+  const shown = ordered.filter((b) => selected === ALL || b.key === selected);
   const isShowdown = slate.contest === 'showdown';
 
   return (
@@ -122,7 +129,7 @@ export function LineupScreen({
 
       {data?.builds && (
         <ScenarioPicker
-          builds={data.builds}
+          builds={ordered}
           read={data.read}
           selected={selected}
           onSelect={setChoice}

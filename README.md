@@ -93,13 +93,23 @@ intended ratios rather than dragging the score toward zero.
 
 Two things gate a production score before it reaches the board.
 
-**Opportunity, not attendance.** Sample confidence is measured in the unit that
-separates a starter from a reserve — pass attempts for quarterbacks, touches for
-backs, targets for receivers — never games played. A backup who appears in ten
-blowouts has ten games and eighty attempts; counting that as a full season of
-evidence is what lets reserves outrank starters. Below 25% of a full sample a
-player is marked unqualified and sorts beneath every graded player, because a
-dozen attempts is unmeasured, not bad.
+**Opportunity where the feed has it, attendance where it does not.** For the
+positions that touch the ball, sample confidence is measured in the unit that
+separates a starter from a reserve — pass attempts for quarterbacks (250 is a
+full sample), touches for backs (120), targets for receivers (60) — because a
+backup who appears in ten blowouts has ten games and eighty attempts, and
+counting that as a full season of evidence is what lets reserves outrank
+starters. Linemen and defenders have no comparable per-player opportunity column
+in the feed, so they fall back to games played against an eight-game full
+sample; that is a data limitation, not a second opinion about what a sample is.
+
+Confidence is a dial before it is a gate. It multiplies the NFL production
+component's weight, so one elite game as a corner counts for an eighth of a
+season and the composite shrinks toward the positional average rather than
+reading as an elite year. Below 25% of a full sample — 63 attempts, 30 touches,
+15 targets, 2 games — the player is additionally marked unqualified and sorts
+beneath every graded player, because a dozen attempts is unmeasured, not bad. A
+player with no production score at all is unqualified on the same footing.
 
 **Quarterbacks are additionally gated on holding the job.** There are 32 starting
 jobs, one ball, and no rotation, so a backup listed above a starter is never
