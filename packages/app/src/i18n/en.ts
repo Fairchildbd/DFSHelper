@@ -182,7 +182,7 @@ export const en = {
     'Money left unspent is matchup edge left unbought. It usually means the pool is thin at a position \u2014 check that the salary file covers the whole slate.',
   'lineup.shootout': 'Shootout',
   'lineup.lowScoring': 'Low-scoring',
-  'lineup.scenarioQuestion': 'How do you think this game goes?',
+  'lineup.scenarioQuestion': 'How matchup thinks this game goes?',
   'lineup.allScenarios': 'All four',
   'lineup.readLead': 'Model’s read: {{scenario}}.',
   'lineup.readLeadSlight': 'Model’s read, slightly: {{scenario}}.',

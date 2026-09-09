@@ -4,12 +4,17 @@ import assert from 'node:assert/strict';
 import {
   CAPTAIN_MULTIPLIER,
   SALARY_CAP,
-  LOW_SCORING_MAX_PER_TEAM,
   SHOOTOUT_MAX_PER_TEAM,
   buildShowdownSet,
   matchupValue,
   optimizeShowdownShape,
   showdownShapes,
+  assignTiers,
+  slateRewardsPunts,
+  LEAN_MAX_FROM_OTHER_TEAM,
+  LOW_SCORING_MAX_FROM_OTHER_TEAM,
+  defenceFavourite,
+  EXPENSIVE_SKILL_SALARY,
 } from '../dist/index.js';
 
 const TEAMS = ['SEA', 'NE'];
@@ -21,7 +26,7 @@ const TEAMS = ['SEA', 'NE'];
  */
 function pool({ kicker = true, defense = true } = {}) {
   const players = [];
-  const add = (team, position, count, { salary, grade, step = -6 }) => {
+  const add = (team, position, count, { salary, grade, step = -6, targets, touches }) => {
     for (let i = 0; i < count; i++) {
       const score = grade + i * step;
       players.push({
@@ -33,18 +38,22 @@ function pool({ kicker = true, defense = true } = {}) {
         salary: salary - i * 1200,
         matchupScore: score,
         value: matchupValue(position, score),
+        posRank: i + 1,
+        targetsPerGame: targets == null ? null : Math.max(targets - i * 1.5, 0),
+        touchesPerGame: touches == null ? null : Math.max(touches - i * 4, 0),
+        status: null,
       });
     }
   };
 
   add('SEA', 'QB', 2, { salary: 10000, grade: 68 });
-  add('SEA', 'WR', 4, { salary: 10600, grade: 81 });
-  add('SEA', 'RB', 3, { salary: 8200, grade: 58 });
-  add('SEA', 'TE', 2, { salary: 4600, grade: 52 });
+  add('SEA', 'WR', 4, { salary: 10600, grade: 81, targets: 9 });
+  add('SEA', 'RB', 3, { salary: 8200, grade: 58, touches: 15 });
+  add('SEA', 'TE', 2, { salary: 4600, grade: 52, targets: 5 });
   add('NE', 'QB', 2, { salary: 9600, grade: 66 });
-  add('NE', 'WR', 3, { salary: 9400, grade: 70 });
-  add('NE', 'RB', 3, { salary: 7600, grade: 60 });
-  add('NE', 'TE', 2, { salary: 4200, grade: 48 });
+  add('NE', 'WR', 3, { salary: 9400, grade: 70, targets: 9 });
+  add('NE', 'RB', 3, { salary: 7600, grade: 60, touches: 15 });
+  add('NE', 'TE', 2, { salary: 4200, grade: 48, targets: 5 });
   if (kicker) {
     add('SEA', 'K', 1, { salary: 4200, grade: 55 });
     add('NE', 'K', 1, { salary: 4000, grade: 50 });
@@ -53,7 +62,7 @@ function pool({ kicker = true, defense = true } = {}) {
     add('SEA', 'DST', 1, { salary: 4400, grade: 72 });
     add('NE', 'DST', 1, { salary: 3800, grade: 60 });
   }
-  return players;
+  return assignTiers(players);
 }
 
 const builds = () => buildShowdownSet(pool(), TEAMS);
@@ -144,10 +153,34 @@ test('a lean build brings one receiver back, not a second stack', () => {
   }
 });
 
-test('the slow build takes a kicker or a defense, and no quarterback', () => {
+test('the slow build takes exactly one defense', () => {
   const { lineup } = at('low-scoring');
-  assert.ok(lineup.picks.some((p) => p.position === 'K' || p.position === 'DST'));
-  assert.equal(countBy(lineup, (p) => p.position === 'QB'), 0);
+  assert.equal(countBy(lineup, (p) => p.position === 'DST'), 1);
+});
+
+test('the slow build only ever kicks with the other side', () => {
+  const { lineup } = at('low-scoring');
+  const defense = lineup.picks.find((p) => p.position === 'DST');
+  for (const kicker of lineup.picks.filter((p) => p.position === 'K')) {
+    assert.notEqual(kicker.team, defense.team, 'kicked with its own defense');
+  }
+});
+
+test('the slow build takes no more than two from the other side', () => {
+  const { lineup } = at('low-scoring');
+  const defense = lineup.picks.find((p) => p.position === 'DST');
+  const other = TEAMS.find((t) => t !== defense.team);
+  assert.ok(
+    countBy(lineup, (p) => p.team === other) <= LOW_SCORING_MAX_FROM_OTHER_TEAM,
+    'leaned away from the defense it bought',
+  );
+});
+
+test('the slow build still builds when nobody kicks', () => {
+  const set = buildShowdownSet(pool({ kicker: false }), TEAMS);
+  const slow = set.find((b) => b.key === 'low-scoring');
+  assert.ok(slow.lineup, slow.problem);
+  assert.equal(countBy(slow.lineup, (p) => p.position === 'DST'), 1);
 });
 
 test('the slow build never captains a receiver', () => {
@@ -155,11 +188,17 @@ test('the slow build never captains a receiver', () => {
   assert.ok(['RB', 'TE', 'K', 'DST'].includes(lineup.picks[0].position));
 });
 
-test('the slow build splits evenly rather than leaning', () => {
+test('the slow build quarterbacks only the team whose defense it bought', () => {
   const { lineup } = at('low-scoring');
-  for (const team of TEAMS) {
-    assert.ok(countBy(lineup, (p) => p.team === team) <= LOW_SCORING_MAX_PER_TEAM);
+  const defense = lineup.picks.find((p) => p.position === 'DST');
+  for (const qb of lineup.picks.filter((p) => p.position === 'QB')) {
+    assert.equal(qb.team, defense.team, 'seated a quarterback against its own defense');
   }
+});
+
+test('the slow build seats at most one quarterback', () => {
+  const { lineup } = at('low-scoring');
+  assert.ok(countBy(lineup, (p) => p.position === 'QB') <= 1);
 });
 
 test('the shootout build rosters both quarterbacks and no kicker or defense', () => {
@@ -178,7 +217,7 @@ test('the low-scoring build reports itself unbuildable when nothing kicks or def
   const set = buildShowdownSet(pool({ kicker: false, defense: false }), TEAMS);
   const slow = set.find((b) => b.key === 'low-scoring');
   assert.equal(slow.lineup, null);
-  assert.match(slow.problem, /kicker or defense/);
+  assert.match(slow.problem, /defense/);
   // The other two are unaffected, and are still returned.
   assert.ok(set.filter((b) => b.team).every((b) => b.lineup));
 });
@@ -269,7 +308,8 @@ function legal(shape, roster, captain) {
     const qb = roster.some((p) => p.team === team && p.position === 'QB');
     if (wr > 2) return false;
     if (wr >= 2 && !qb) return false;
-    if (roster.filter((p) => p.team === team).length > (shape.rules.maxPerTeam ?? 5)) return false;
+    const teamCap = shape.rules.maxByTeam?.[team] ?? shape.rules.maxPerTeam ?? 5;
+    if (roster.filter((p) => p.team === team).length > teamCap) return false;
     const cap = shape.rules.wrCapByTeam?.[team];
     if (cap != null && wr > cap) return false;
   }
@@ -277,6 +317,7 @@ function legal(shape, roster, captain) {
     if (roster.some((p) => p.position === barred)) return false;
   }
   if (shape.rules.captainTeam && captain.team !== shape.rules.captainTeam) return false;
+  if (shape.rules.captainId && captain.id !== shape.rules.captainId) return false;
   if (shape.rules.captainPositions && !shape.rules.captainPositions.includes(captain.position)) {
     return false;
   }
@@ -347,4 +388,109 @@ test('a one-sided pool has no legal showdown lineup', () => {
     TEAMS,
   );
   assert.ok(set.every((b) => b.lineup == null));
+});
+
+// ---------------------------------------------------------------------------
+// Tiers
+// ---------------------------------------------------------------------------
+
+test('a lean build captains the most expensive player on the team it backs', () => {
+  for (const key of ['lean-SEA', 'lean-NE']) {
+    const build = at(key);
+    const team = build.team;
+    const priciest = pool()
+      .filter((p) => p.team === team && ['QB', 'RB', 'WR', 'TE'].includes(p.position))
+      .sort((a, b) => b.salary - a.salary)[0];
+    const captain = build.lineup.picks.find((p) => p.slot === 'CPT');
+    assert.equal(captain.id, priciest.id, `${key} captained ${captain.name}`);
+  }
+});
+
+test('a lean build seats no more than two from the other team', () => {
+  for (const key of ['lean-SEA', 'lean-NE']) {
+    const build = at(key);
+    const other = TEAMS.find((t) => t !== build.team);
+    assert.ok(
+      countBy(build.lineup, (p) => p.team === other) <= LEAN_MAX_FROM_OTHER_TEAM,
+      `${key} leaned on the wrong side`,
+    );
+  }
+});
+
+test('a shootout splits three and three', () => {
+  const lineup = at('shootout').lineup;
+  for (const team of TEAMS) {
+    assert.equal(countBy(lineup, (p) => p.team === team), SHOOTOUT_MAX_PER_TEAM);
+  }
+});
+
+test('a slate with two expensive skill players is not a punting slate', () => {
+  assert.equal(slateRewardsPunts(pool()), false);
+});
+
+test('a slate with four expensive skill players is a punting slate', () => {
+  const players = pool().map((p) =>
+    ['SEA-WR0', 'SEA-QB0', 'NE-WR0', 'NE-QB0'].includes(p.id)
+      ? { ...p, salary: EXPENSIVE_SKILL_SALARY }
+      : p,
+  );
+  assert.equal(slateRewardsPunts(players), true);
+});
+
+test('no build reaches for a tier 4 body when the slate is not a punting slate', () => {
+  const punt = {
+    id: 'SEA-PUNT',
+    name: 'SEA Punt',
+    position: 'RB',
+    team: 'SEA',
+    gameId: 'G1',
+    salary: 200,
+    matchupScore: 99,
+    value: matchupValue('RB', 99),
+    posRank: 9,
+    targetsPerGame: 0,
+    touchesPerGame: 0,
+    status: null,
+  };
+  const players = assignTiers([...pool(), punt]);
+  assert.equal(players.find((p) => p.id === 'SEA-PUNT').tier, 4);
+
+  for (const build of buildShowdownSet(players, TEAMS)) {
+    if (!build.lineup) continue;
+    assert.ok(
+      !build.lineup.picks.some((p) => p.id === 'SEA-PUNT'),
+      `${build.key} seated a tier 4 body it did not need`,
+    );
+  }
+});
+
+test('a backup quarterback is never seated', () => {
+  for (const build of buildShowdownSet(pool(), TEAMS)) {
+    if (!build.lineup) continue;
+    assert.ok(!build.lineup.picks.some((p) => p.id.endsWith('QB1')), `${build.key} seated a backup`);
+  }
+});
+
+test('the slow build is built on the better defense, not the better lineup', () => {
+  const { lineup } = at('low-scoring');
+  const defense = lineup.picks.find((p) => p.position === 'DST');
+  const graded = pool()
+    .filter((p) => p.position === 'DST')
+    .sort((a, b) => b.matchupScore - a.matchupScore)[0];
+  assert.equal(defense.team, graded.team);
+});
+
+test('a defense facing a helpless offense outranks a better defense facing a good one', () => {
+  const defenses = pool().filter((p) => p.position === 'DST');
+  const onGradeAlone = defenceFavourite(defenses, TEAMS, undefined);
+  assert.equal(onGradeAlone.team, 'SEA');
+
+  const facing = defenceFavourite(defenses, TEAMS, { SEA: -90, NE: 90 });
+  assert.equal(facing.team, 'NE', 'ignored the offense each defense actually faces');
+});
+
+test('the slow build is allowed to captain its quarterback, never a receiver', () => {
+  const shape = showdownShapes(TEAMS).find((s) => s.key === 'low-scoring');
+  assert.ok(shape.rules.captainPositions.includes('QB'));
+  assert.ok(!shape.rules.captainPositions.includes('WR'));
 });

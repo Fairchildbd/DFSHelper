@@ -6,4 +6,5 @@ export * from './stats.js';
 export * from './types.js';
 export * from './dfs.js';
 export * from './showdown.js';
+export * from './tiers.js';
 export * from './dvoa.js';

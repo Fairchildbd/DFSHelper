@@ -7,6 +7,10 @@ import {
   type ScriptEdge,
   type ShowdownBuild,
   type StrategyKey,
+  type Tiered,
+  UNAVAILABLE_STATUS,
+  UNAVAILABLE_TIER,
+  assignTiers,
   buildShowdownSet,
   matchupValue,
   optimizeClassic,
@@ -72,6 +76,63 @@ function gradeDefenses(rates: Map<string, DefenseRates>): Map<string, number> {
   return out;
 }
 
+interface MatchupGrade {
+  gsis_id: string;
+  matchup_score: number;
+  lane_edge: number | null;
+  volume_score: number | null;
+  pos_rank: number | null;
+}
+
+function poolNote(status: string | null, grade: MatchupGrade | undefined): string {
+  if (!grade) return 'Not graded this week — salary filler only';
+
+  const edge =
+    grade.lane_edge == null
+      ? ''
+      : ` · unit edge ${grade.lane_edge > 0 ? '+' : ''}${grade.lane_edge.toFixed(0)}`;
+  const volume = grade.volume_score == null ? '' : ` · volume ${grade.volume_score.toFixed(0)}`;
+
+  return (
+    (status === 'Q' ? 'Questionable · ' : '') +
+    `matchup ${grade.matchup_score.toFixed(0)}` +
+    edge +
+    volume
+  );
+}
+
+interface Usage {
+  targetsPerGame: number;
+  touchesPerGame: number;
+}
+
+async function loadUsage(season: number, gsisIds: string[]): Promise<Map<string, Usage>> {
+  if (gsisIds.length === 0) return new Map();
+
+  const rows = await sql<
+    { gsis_id: string; games: number; targets: number; touches: number }[]
+  >`
+    -- A tier is a claim about role, and role is opportunity: targets for a
+    -- receiver, carries plus receptions for a back. Dividing by weeks the
+    -- player actually appeared keeps a starter who missed time from reading as
+    -- a reserve, which is the mistake that seats a fullback.
+    SELECT gsis_id,
+           COUNT(DISTINCT week)::int AS games,
+           COALESCE(SUM(targets), 0)::float8 AS targets,
+           (COALESCE(SUM(carries), 0) + COALESCE(SUM(receptions), 0))::float8 AS touches
+    FROM player_week_offense
+    WHERE season = ${season} AND season_type = 'REG' AND gsis_id = ANY(${gsisIds})
+    GROUP BY gsis_id
+  `;
+
+  return new Map(
+    rows.map((r) => {
+      const games = Math.max(r.games, 1);
+      return [r.gsis_id, { targetsPerGame: r.targets / games, touchesPerGame: r.touches / games }];
+    }),
+  );
+}
+
 export interface PoolPlayer {
   id: string;
   gsisId: string | null;
@@ -83,6 +144,9 @@ export interface PoolPlayer {
   matchupScore: number | null;
   value: number;
   laneEdge: number | null;
+  posRank: number | null;
+  targetsPerGame: number | null;
+  touchesPerGame: number | null;
   status: string | null;
   note: string;
 }
@@ -93,7 +157,7 @@ export interface PoolResult {
   contest: ContestType;
   strategy: StrategyKey;
   baselineSeason: number;
-  players: PoolPlayer[];
+  players: Tiered<PoolPlayer>[];
   ungraded: number;
   unavailable: number;
 }
@@ -104,8 +168,6 @@ export interface PoolOptions {
   contest: ContestType;
   gameId?: string;
 }
-
-const UNAVAILABLE = new Set(['OUT', 'IR', 'D', 'NA', 'SUSP']);
 
 export async function buildPool(opts: PoolOptions): Promise<PoolResult> {
   const { season, week, contest } = opts;
@@ -144,17 +206,11 @@ export async function buildPool(opts: PoolOptions): Promise<PoolResult> {
     };
   }
 
-  const [rates, graded] = await Promise.all([
+  const gsisIds = [...new Set(salaries.map((r) => r.gsis_id).filter((id) => id != null))];
+
+  const [rates, graded, usage] = await Promise.all([
     loadDefenseRates(statsSeason),
-    sql<
-      {
-        gsis_id: string;
-        matchup_score: number;
-        lane_edge: number | null;
-        volume_score: number | null;
-        pos_rank: number | null;
-      }[]
-    >`
+    sql<MatchupGrade[]>`
       SELECT gsis_id,
              matchup_score::float8 AS matchup_score,
              lane_edge::float8 AS lane_edge,
@@ -163,6 +219,7 @@ export async function buildPool(opts: PoolOptions): Promise<PoolResult> {
       FROM player_matchups
       WHERE season = ${season} AND week = ${week}
     `,
+    loadUsage(statsSeason, gsisIds),
   ]);
 
   const byGsis = new Map(graded.map((g) => [g.gsis_id, g]));
@@ -174,11 +231,8 @@ export async function buildPool(opts: PoolOptions): Promise<PoolResult> {
 
   for (const row of salaries) {
     const position = row.position.toUpperCase() as DkPosition;
-
-    if (row.status && UNAVAILABLE.has(row.status)) {
-      unavailable++;
-      continue;
-    }
+    const sidelined = row.status != null && UNAVAILABLE_STATUS.has(row.status.toUpperCase());
+    if (sidelined) unavailable++;
 
     if (position === 'DST') {
       const rate = rates.get(row.team) ?? null;
@@ -195,6 +249,9 @@ export async function buildPool(opts: PoolOptions): Promise<PoolResult> {
         matchupScore: score,
         value: matchupValue(position, score),
         laneEdge: null,
+        posRank: null,
+        targetsPerGame: null,
+        touchesPerGame: null,
         status: row.status,
         note: rate
           ? `${rate.takeaways.toFixed(1)} takeaways and ${rate.sacks.toFixed(1)} sacks a game in ${statsSeason}`
@@ -204,8 +261,9 @@ export async function buildPool(opts: PoolOptions): Promise<PoolResult> {
     }
 
     const grade = row.gsis_id ? byGsis.get(row.gsis_id) : undefined;
-    if (!grade) ungraded++;
+    if (!grade && !sidelined) ungraded++;
 
+    const played = row.gsis_id ? usage.get(row.gsis_id) : undefined;
     const score = grade?.matchup_score ?? null;
     players.push({
       id: row.dk_id,
@@ -218,23 +276,18 @@ export async function buildPool(opts: PoolOptions): Promise<PoolResult> {
       matchupScore: score,
       value: matchupValue(position, score),
       laneEdge: grade?.lane_edge ?? null,
+      posRank: grade?.pos_rank ?? null,
+      targetsPerGame: played?.targetsPerGame ?? null,
+      touchesPerGame: played?.touchesPerGame ?? null,
       status: row.status,
-      note:
-        (row.status === 'Q' ? 'Questionable · ' : '') +
-        (grade
-          ? `matchup ${grade.matchup_score.toFixed(0)}` +
-            (grade.lane_edge != null
-              ? ` · unit edge ${grade.lane_edge > 0 ? '+' : ''}${grade.lane_edge.toFixed(0)}`
-              : '') +
-            (grade.volume_score != null ? ` · volume ${grade.volume_score.toFixed(0)}` : '')
-          : 'Not graded this week — salary filler only'),
+      note: sidelined ? `${row.status} — off the board this week` : poolNote(row.status, grade),
     });
   }
 
   return {
     season, week, contest, strategy,
     baselineSeason: statsSeason,
-    players,
+    players: assignTiers(players),
     ungraded,
     unavailable,
   };
@@ -272,6 +325,18 @@ async function showdownTeams(
   return [teams[0] ?? '', teams[1] ?? ''];
 }
 
+function leaningTeam(
+  read: GameScriptRead | null,
+  teams: readonly [string, string],
+): string | null {
+  if (read == null) return null;
+  if (read.team != null) return read.team;
+
+  const [home, away] = read.lanes;
+  if (home === away) return null;
+  return home > away ? teams[0] : teams[1];
+}
+
 async function scriptRead(
   teams: readonly [string, string],
   gameId?: string,
@@ -298,6 +363,7 @@ export async function buildLineup(
   opts: PoolOptions & { locks?: string[]; excludes?: string[]; stackGame?: string },
 ): Promise<LineupResult> {
   const pool = await buildPool(opts);
+  const selectable = pool.players.filter((player) => player.tier !== UNAVAILABLE_TIER);
 
   if (pool.players.length === 0) {
     return {
@@ -311,11 +377,13 @@ export async function buildLineup(
   }
 
   if (opts.contest === 'showdown') {
-    const teams = await showdownTeams(pool.players, opts.gameId);
-    const [builds, read] = await Promise.all([
-      Promise.resolve(buildShowdownSet(pool.players, teams, opts)),
-      scriptRead(teams, opts.gameId ?? pool.players[0]?.gameId),
-    ]);
+    const teams = await showdownTeams(selectable, opts.gameId);
+    const read = await scriptRead(teams, opts.gameId ?? selectable[0]?.gameId);
+    const builds = buildShowdownSet(selectable, teams, {
+      ...opts,
+      leaning: leaningTeam(read, teams),
+      offenseLanes: read ? { [teams[0]]: read.lanes[0], [teams[1]]: read.lanes[1] } : undefined,
+    });
     const built = builds.filter((b) => b.lineup != null);
     return {
       ...pool,
@@ -330,7 +398,7 @@ export async function buildLineup(
     };
   }
 
-  const slateGames = [...new Set(pool.players.map((p) => p.gameId))];
+  const slateGames = [...new Set(selectable.map((p) => p.gameId))];
   const games = await sql<
     { game_id: string; home_team: string; away_team: string; mismatch_score: number | null }[]
   >`
@@ -344,7 +412,7 @@ export async function buildLineup(
   const target = opts.stackGame ? games.find((g) => g.game_id === opts.stackGame) : games[0];
 
   if (!target) {
-    const lineup = optimizeClassic(pool.players, opts);
+    const lineup = optimizeClassic(selectable, opts);
     return {
       ...pool,
       lineup,
@@ -355,18 +423,18 @@ export async function buildLineup(
     };
   }
 
-  const stacks = stackCombinations(pool.players, { gameId: target.game_id }).slice(0, MAX_STACKS);
+  const stacks = stackCombinations(selectable, { gameId: target.game_id }).slice(0, MAX_STACKS);
 
   let best: Lineup | null = null;
   for (const stack of stacks) {
-    const lineup = optimizeClassic(pool.players, {
+    const lineup = optimizeClassic(selectable, {
       locks: [...stack, ...(opts.locks ?? [])],
       excludes: opts.excludes,
     });
     if (lineup && (!best || lineup.value > best.value)) best = lineup;
   }
 
-  const lineup = best ?? optimizeClassic(pool.players, opts);
+  const lineup = best ?? optimizeClassic(selectable, opts);
 
   return {
     ...pool,
